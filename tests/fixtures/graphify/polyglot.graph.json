@@ -1,0 +1,687 @@
+{
+  "nodes": [
+    {
+      "id": "ordercontroller",
+      "label": "OrderController.java",
+      "file_type": "code",
+      "source_file": "OrderController.java",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "ordercontroller_ordercontroller",
+      "label": "OrderController",
+      "file_type": "code",
+      "source_file": "OrderController.java",
+      "source_location": "L5",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "restcontroller",
+      "label": "RestController",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "requestmapping",
+      "label": "RequestMapping",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "orderservice",
+      "label": "OrderService",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "ordercontroller_ordercontroller_ordercontroller",
+      "label": ".OrderController()",
+      "file_type": "code",
+      "source_file": "OrderController.java",
+      "source_location": "L11",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "ordercontroller_ordercontroller_find",
+      "label": ".find()",
+      "file_type": "code",
+      "source_file": "OrderController.java",
+      "source_location": "L15",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "order",
+      "label": "Order",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "getmapping",
+      "label": "GetMapping",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "ordercontroller_ordercontroller_create",
+      "label": ".create()",
+      "file_type": "code",
+      "source_file": "OrderController.java",
+      "source_location": "L20",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "orderrequest",
+      "label": "OrderRequest",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "postmapping",
+      "label": "PostMapping",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "handler",
+      "label": "handler.go",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "polyglot_store",
+      "label": "Store",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L11",
+      "_origin": "ast"
+    },
+    {
+      "id": "handler_newstore",
+      "label": "NewStore()",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L15",
+      "_origin": "ast"
+    },
+    {
+      "id": "polyglot_store_load",
+      "label": ".Load()",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L19",
+      "_origin": "ast"
+    },
+    {
+      "id": "handler_listitems",
+      "label": "listItems()",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L23",
+      "_origin": "ast"
+    },
+    {
+      "id": "handler_main",
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "handler.go",
+      "source_location": "L33",
+      "_origin": "ast"
+    },
+    {
+      "id": "server",
+      "label": "server.js",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "server_express",
+      "label": "express",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "server_loaduser_saveuser",
+      "label": "{ loadUser, saveUser }",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L2",
+      "_origin": "ast"
+    },
+    {
+      "id": "server_app",
+      "label": "app",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L5",
+      "_origin": "ast"
+    },
+    {
+      "id": "server_userservice",
+      "label": "UserService",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L7",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "server_userservice_constructor",
+      "label": ".constructor()",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L8",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "server_userservice_fetch",
+      "label": ".fetch()",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L10",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "server_userservice_persist",
+      "label": ".persist()",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L15",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "server_buildservice",
+      "label": "buildService()",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L20",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "go_type_net_http_responsewriter",
+      "label": "net/http.ResponseWriter",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "go_type_net_http_request",
+      "label": "net/http.Request",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    }
+  ],
+  "edges": [
+    {
+      "source": "ordercontroller",
+      "target": "annotation",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller",
+      "target": "ordercontroller_ordercontroller",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "restcontroller",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L5",
+      "weight": 1.0,
+      "context": "attribute",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "requestmapping",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L5",
+      "weight": 1.0,
+      "context": "attribute",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "orderservice",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L9",
+      "weight": 1.0,
+      "context": "field",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "ordercontroller_ordercontroller_ordercontroller",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_ordercontroller",
+      "target": "orderservice",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L11",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "ordercontroller_ordercontroller_find",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_find",
+      "target": "order",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L15",
+      "weight": 1.0,
+      "context": "return_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_find",
+      "target": "getmapping",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L15",
+      "weight": 1.0,
+      "context": "attribute",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller",
+      "target": "ordercontroller_ordercontroller_create",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_create",
+      "target": "orderrequest",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L20",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_create",
+      "target": "order",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L20",
+      "weight": 1.0,
+      "context": "return_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "ordercontroller_ordercontroller_create",
+      "target": "postmapping",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "OrderController.java",
+      "source_location": "L20",
+      "weight": 1.0,
+      "context": "attribute",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "go_pkg_encoding_json",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L4",
+      "weight": 1.0,
+      "context": "import",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "go_pkg_net_http",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L5",
+      "weight": 1.0,
+      "context": "import",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "go_pkg_os",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L6",
+      "weight": 1.0,
+      "context": "import",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "polyglot_store",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "handler_newstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler_newstore",
+      "target": "polyglot_store",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L15",
+      "weight": 1.0,
+      "context": "return_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "polyglot_store",
+      "target": "polyglot_store_load",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "handler_listitems",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler_listitems",
+      "target": "go_type_net_http_responsewriter",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L23",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler_listitems",
+      "target": "go_type_net_http_request",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L23",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "_origin": "ast"
+    },
+    {
+      "source": "handler",
+      "target": "handler_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L33",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler_listitems",
+      "target": "handler_newstore",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L24",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "handler_listitems",
+      "target": "polyglot_store_load",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "handler.go",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "ref_express",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_express",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "c_users_rono_appdata_local_temp_claude_c_users_rono_desktop_traceback_analysis_main_agentic_system_2efee57a_f713_4948_9915_5819f161f17d_scratchpad_polyglot_store",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "c_users_rono_appdata_local_temp_claude_c_users_rono_desktop_traceback_analysis_main_agentic_system_2efee57a_f713_4948_9915_5819f161f17d_scratchpad_polyglot_store_loaduser",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "c_users_rono_appdata_local_temp_claude_c_users_rono_desktop_traceback_analysis_main_agentic_system_2efee57a_f713_4948_9915_5819f161f17d_scratchpad_polyglot_store_saveuser",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_loaduser_saveuser",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_app",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_userservice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server_userservice",
+      "target": "server_userservice_constructor",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server_userservice",
+      "target": "server_userservice_fetch",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server_userservice",
+      "target": "server_userservice_persist",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_buildservice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server_buildservice",
+      "target": "server_userservice",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "server.js",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "server",
+      "target": "server_buildservice",
+      "relation": "indirect_call",
+      "context": "collection",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "server.js",
+      "source_location": "L36",
+      "weight": 1.0,
+      "_origin": "ast"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

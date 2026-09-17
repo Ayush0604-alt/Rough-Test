@@ -1,0 +1,76 @@
+{
+  "name": "py_service",
+  "paradigm": "http_service",
+  "primary_language": "Python",
+  "languages": [
+    "Python",
+    "SQL"
+  ],
+  "notes": "Read/mutate split is deliberately uneven and the mutating handlers sort after GET alphabetically, which is what reproduces the selection bias when a cap bites.",
+  "entry_points": [
+    {
+      "class": "ENDPOINT",
+      "id": "GET /orders",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "GET /orders/{order_id}",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "GET /orders/{order_id}/history",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "GET /health",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "POST /orders",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "POST /orders/{order_id}/confirm",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "PUT /orders/{order_id}",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "PATCH /orders/{order_id}/address",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "DELETE /orders/{order_id}",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "DELETE /orders/{order_id}/archive",
+      "effect": "mutate"
+    },
+    {
+      "class": "SCRIPT_ENTRY",
+      "id": "main!__main__",
+      "effect": "mutate"
+    }
+  ],
+  "domain_policy_artifacts": [
+    {
+      "file": "schema.sql",
+      "kind": "schema",
+      "policy": "order state vocabulary and the approved-ceiling rationale"
+    }
+  ],
+  "selection_cap_for_measurement": 6,
+  "fixture_dir": "tests/fixtures/corpus/py_service"
+}

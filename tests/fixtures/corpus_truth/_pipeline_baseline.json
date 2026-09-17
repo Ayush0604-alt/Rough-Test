@@ -1,0 +1,111 @@
+{
+  "go_service": {
+    "by_type": {
+      "system": 1
+    },
+    "citation_resolution_rate": 1.0,
+    "citations": 1,
+    "citations_resolved": 1,
+    "confidence_histogram": {
+      "0.75": 1
+    },
+    "contradicted_published": 0,
+    "distinct_units_cited": 1,
+    "duplicate_titles": 0,
+    "duplication_rate": 0.0,
+    "empty_acceptance_criteria": 0,
+    "empty_assumptions": 0,
+    "empty_open_questions": 1,
+    "file_types_cited": {
+      "md": 1
+    },
+    "relation_without_parent": 0,
+    "requirements": 1,
+    "source": "pipeline:go_service",
+    "supported_published": 1
+  },
+  "py_cli": {
+    "by_type": {
+      "business_rule": 1,
+      "functional": 4,
+      "observation": 2,
+      "system": 1
+    },
+    "citation_resolution_rate": 1.0,
+    "citations": 8,
+    "citations_resolved": 8,
+    "confidence_histogram": {
+      "0.75": 4,
+      "0.8": 4
+    },
+    "contradicted_published": 0,
+    "distinct_units_cited": 2,
+    "duplicate_titles": 0,
+    "duplication_rate": 0.0,
+    "empty_acceptance_criteria": 0,
+    "empty_assumptions": 0,
+    "empty_open_questions": 8,
+    "file_types_cited": {
+      "py": 8
+    },
+    "relation_without_parent": 0,
+    "requirements": 8,
+    "source": "pipeline:py_cli",
+    "supported_published": 8
+  },
+  "py_service": {
+    "by_type": {
+      "business_rule": 1,
+      "functional": 8,
+      "observation": 2
+    },
+    "citation_resolution_rate": 1.0,
+    "citations": 11,
+    "citations_resolved": 11,
+    "confidence_histogram": {
+      "0.75": 3,
+      "0.8": 8
+    },
+    "contradicted_published": 0,
+    "distinct_units_cited": 2,
+    "duplicate_titles": 0,
+    "duplication_rate": 0.0,
+    "empty_acceptance_criteria": 0,
+    "empty_assumptions": 0,
+    "empty_open_questions": 11,
+    "file_types_cited": {
+      "py": 11
+    },
+    "relation_without_parent": 0,
+    "requirements": 11,
+    "source": "pipeline:py_service",
+    "supported_published": 11
+  },
+  "py_worker": {
+    "by_type": {
+      "observation": 2,
+      "system": 3
+    },
+    "citation_resolution_rate": 1.0,
+    "citations": 5,
+    "citations_resolved": 5,
+    "confidence_histogram": {
+      "0.75": 2,
+      "0.8": 3
+    },
+    "contradicted_published": 0,
+    "distinct_units_cited": 2,
+    "duplicate_titles": 0,
+    "duplication_rate": 0.0,
+    "empty_acceptance_criteria": 0,
+    "empty_assumptions": 0,
+    "empty_open_questions": 5,
+    "file_types_cited": {
+      "py": 5
+    },
+    "relation_without_parent": 0,
+    "requirements": 5,
+    "source": "pipeline:py_worker",
+    "supported_published": 5
+  }
+}

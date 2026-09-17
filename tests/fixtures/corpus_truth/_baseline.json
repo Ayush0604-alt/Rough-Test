@@ -1,0 +1,260 @@
+{
+  "go_service": {
+    "class_coverage_detected": {
+      "ENDPOINT": 0.0
+    },
+    "class_coverage_selected": {
+      "ENDPOINT": 0.0
+    },
+    "clusters": 4,
+    "detected": {},
+    "detected_but_unselected": [
+      "ENDPOINT main.go::reserveItem()"
+    ],
+    "detected_entities": 5,
+    "entities_by_kind": {
+      "ENDPOINT": 4,
+      "EXTERNAL_SYMBOL": 2,
+      "FILE": 2,
+      "FUNCTION": 5,
+      "SCRIPT_ENTRY": 1
+    },
+    "fixture": "go_service",
+    "graph_entities": 14,
+    "halted": null,
+    "inventory_only_files": 1,
+    "languages_inventoried": {
+      "Go": 1,
+      "Markdown": 1
+    },
+    "missed_entry_points": [
+      "GET /items",
+      "GET /item",
+      "POST /reserve",
+      "POST /release"
+    ],
+    "parseable_files": 1,
+    "present": {
+      "ENDPOINT": {
+        "mutate": 2,
+        "read": 2
+      }
+    },
+    "selected": {},
+    "selected_ids": [
+      "ENDPOINT main.go::getItem()",
+      "ENDPOINT main.go::listItems()",
+      "ENDPOINT main.go::releaseItem()",
+      "main!__main__"
+    ]
+  },
+  "py_cli": {
+    "class_coverage_detected": {
+      "CLI_COMMAND": 1.0,
+      "CLI_ENTRY": 1.0,
+      "SCRIPT_ENTRY": 1.0
+    },
+    "class_coverage_selected": {
+      "CLI_COMMAND": 1.0,
+      "CLI_ENTRY": 1.0,
+      "SCRIPT_ENTRY": 1.0
+    },
+    "clusters": 4,
+    "detected": {
+      "CLI_COMMAND": {
+        "mutate": 2,
+        "read": 1
+      },
+      "CLI_ENTRY": {
+        "mutate": 1
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "detected_but_unselected": [],
+    "detected_entities": 5,
+    "entities_by_kind": {
+      "CLI_COMMAND": 3,
+      "CLI_ENTRY": 1,
+      "FILE": 2,
+      "FUNCTION": 8,
+      "RATIONALE": 5,
+      "SCRIPT_ENTRY": 1
+    },
+    "fixture": "py_cli",
+    "graph_entities": 20,
+    "halted": null,
+    "inventory_only_files": 0,
+    "languages_inventoried": {
+      "Python": 2
+    },
+    "missed_entry_points": [],
+    "parseable_files": 2,
+    "present": {
+      "CLI_COMMAND": {
+        "mutate": 2,
+        "read": 1
+      },
+      "CLI_ENTRY": {
+        "mutate": 1
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "selected": {
+      "CLI_COMMAND": {
+        "mutate": 2,
+        "read": 1
+      },
+      "CLI_ENTRY": {
+        "mutate": 1
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "selected_ids": [
+      "adjust",
+      "reconcile",
+      "report",
+      "tool!__main__",
+      "tool.main!cli"
+    ]
+  },
+  "py_service": {
+    "class_coverage_detected": {
+      "ENDPOINT": 1.0,
+      "SCRIPT_ENTRY": 1.0
+    },
+    "class_coverage_selected": {
+      "ENDPOINT": 0.5,
+      "SCRIPT_ENTRY": 1.0
+    },
+    "clusters": 6,
+    "detected": {
+      "ENDPOINT": {
+        "mutate": 6,
+        "read": 4
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "detected_but_unselected": [
+      "GET /orders/{order_id}",
+      "GET /orders/{order_id}/history",
+      "POST /orders",
+      "POST /orders/{order_id}/confirm",
+      "PUT /orders/{order_id}"
+    ],
+    "detected_entities": 11,
+    "entities_by_kind": {
+      "ENDPOINT": 10,
+      "EXTERNAL_SYMBOL": 5,
+      "FILE": 5,
+      "FUNCTION": 17,
+      "RATIONALE": 12,
+      "SCRIPT_ENTRY": 1,
+      "SYMBOL": 1
+    },
+    "fixture": "py_service",
+    "graph_entities": 51,
+    "halted": null,
+    "inventory_only_files": 0,
+    "languages_inventoried": {
+      "Python": 4,
+      "SQL": 1
+    },
+    "missed_entry_points": [],
+    "parseable_files": 5,
+    "present": {
+      "ENDPOINT": {
+        "mutate": 6,
+        "read": 4
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "selected": {
+      "ENDPOINT": {
+        "mutate": 3,
+        "read": 2
+      },
+      "SCRIPT_ENTRY": {
+        "mutate": 1
+      }
+    },
+    "selected_ids": [
+      "DELETE /orders/{order_id}",
+      "DELETE /orders/{order_id}/archive",
+      "GET /health",
+      "GET /orders",
+      "PATCH /orders/{order_id}/address",
+      "main!__main__"
+    ]
+  },
+  "py_worker": {
+    "class_coverage_detected": {
+      "EVENT_CONSUMER": 1.0,
+      "SCHEDULED_JOB": 1.0
+    },
+    "class_coverage_selected": {
+      "EVENT_CONSUMER": 1.0,
+      "SCHEDULED_JOB": 1.0
+    },
+    "clusters": 3,
+    "detected": {
+      "EVENT_CONSUMER": {
+        "mutate": 2
+      },
+      "SCHEDULED_JOB": {
+        "mutate": 1
+      }
+    },
+    "detected_but_unselected": [],
+    "detected_entities": 3,
+    "entities_by_kind": {
+      "CLASS": 2,
+      "EVENT_CONSUMER": 2,
+      "EXTERNAL_SYMBOL": 2,
+      "FILE": 4,
+      "FUNCTION": 6,
+      "METHOD": 4,
+      "RATIONALE": 7,
+      "SCHEDULED_JOB": 1
+    },
+    "fixture": "py_worker",
+    "graph_entities": 28,
+    "halted": null,
+    "inventory_only_files": 0,
+    "languages_inventoried": {
+      "Python": 4
+    },
+    "missed_entry_points": [],
+    "parseable_files": 4,
+    "present": {
+      "EVENT_CONSUMER": {
+        "mutate": 2
+      },
+      "SCHEDULED_JOB": {
+        "mutate": 1
+      }
+    },
+    "selected": {
+      "EVENT_CONSUMER": {
+        "mutate": 2
+      },
+      "SCHEDULED_JOB": {
+        "mutate": 1
+      }
+    },
+    "selected_ids": [
+      "24h",
+      "order.placed",
+      "payment.settled"
+    ]
+  }
+}

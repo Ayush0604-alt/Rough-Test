@@ -1,0 +1,261 @@
+================================================================================
+UI-AWARE TEST GENERATION & EXECUTION ARCHITECTURE: TASK BREAKDOWN (TASKS 1 - 11)
+================================================================================
+
+TASK 1: Target Server Lifecycle, Auth & Crawl Policy Setup (Box 2 & Step 3)
+--------------------------------------------------------------------------------
+Goal:
+Enable Playwright to connect to target web applications under test, supporting
+both user-started local/staging servers and agent-managed local dev servers,
+with full RBAC authentication and safety crawl policies.
+
+Frontend / UI:
+- Streamlit widgets for selecting Server Mode (User-managed URL vs Auto-launch Dev Server).
+- Inputs for Target Base URL (e.g. http://localhost:3000), Auth Type (Form Login, Bearer Token, Cookies), User Roles (admin, user), and Crawl Policy sliders (max_depth, max_screens, URL exclusion list).
+
+Backend / Engine:
+- Server Manager (src/agentic/capabilities/ui/server.py): If Auto-launch is selected, uses Python subprocess.Popen to start 'npm run dev' or 'uvicorn', polls the port until healthy (http://localhost:3000/health), and captures stdout/stderr.
+- Auth & RBAC State Manager (src/agentic/capabilities/ui/browser.py): Launches Playwright Chromium context, performs login flows for configured RBAC roles (admin, standard), and saves storage states (storageState_admin.json, storageState_user.json).
+- Crawl Policy Sanitizer: Compiles regex rules to blacklist dangerous routes (/logout, /delete-account, /billing/wipe).
+
+Tools & Setup to Focus On:
+- playwright.async_api, subprocess, socket (port listening), pydantic (UIConfig, AuthReference, CrawlPolicy).
+- Key Focus: Preventing session logouts and handling multi-role RBAC sessions safely.
+
+
+TASK 2: Runtime Input Preflight Validation Gate (Step 3)
+--------------------------------------------------------------------------------
+Goal:
+Validate the target URL, server health, authentication credentials, and crawl
+safety bounds BEFORE Playwright launches full browser discovery.
+
+Frontend / UI:
+- Live status indicator in Streamlit (Ping test, DNS check, Auth Token check, Safety bounds check).
+
+Backend / Engine:
+- Preflight Validator (src/agentic/capabilities/ui/inputs.py):
+  1. Sends HTTP HEAD / GET request to verify target URL is alive (HTTP 200/302).
+  2. Validates auth tokens/cookies are non-expired.
+  3. Verifies target domain matches allowed_domains to prevent external site crawling (e.g. escaping to github.com).
+- Gate Routing: Emits VALIDATED to proceed to Step 4, or raises a clear PreflightValidationError if the server is down.
+
+Tools & Setup to Focus On:
+- urllib.request, urllib.parse, httpx (async preflight pings).
+- Key Focus: Failing fast in under 2 seconds if the target server is down or auth credentials are missing.
+
+
+TASK 3: Playwright Autonomous UI Discovery & Accessibility Crawler (Step 4)
+--------------------------------------------------------------------------------
+Goal:
+Crawl the live web application using headless Chromium, discover reachable
+screens/routes, and inspect DOM/Accessibility trees.
+
+Frontend / UI:
+- Streamlit real-time crawler progress bar (Screens Discovered: 12, Current Route: /dashboard, Elements Found: 140).
+
+Backend / Engine:
+- Autonomous Crawler (src/agentic/capabilities/ui/discovery.py):
+  - Breadth-First Search (BFS) queue bounded by max_depth and max_screens.
+  - For every visited route/modal:
+    1. Captures full-page viewport screenshot (screen_xxx.png).
+    2. Extracts interactable DOM elements (<button>, <input>, <select>, <a>, [role="button"]).
+    3. Extracts Playwright ARIA accessibility tree (page.accessibility.snapshot()).
+    4. Generates multi-tiered resilient locators:
+       a. Accessibility Role (getByRole('button', { name: 'Submit' }))
+       b. Test ID (getByTestId('submit-btn'))
+       c. Label (getByLabel('Password'))
+       d. Resilient CSS Selector (#submit-btn)
+
+Tools & Setup to Focus On:
+- playwright.async_api (page.goto, page.content, page.accessibility), beautifulsoup4.
+- Key Focus: Handling dynamic Single-Page Application (SPA) state changes, modals, and dynamic popups without infinite loops.
+
+
+TASK 4: UI Knowledge Graph Construction & Visualizer (Step 5)
+--------------------------------------------------------------------------------
+Goal:
+Transform raw DOM elements, screens, and navigation transitions into an
+interactive directed graph (UIGraph).
+
+Frontend / UI:
+- Interactive Graph Visualizer (app.py): Renders an interactive 2D graph node view (using PyVis / D3.js) where nodes are screens (with clickable screenshots) and directed edges are click/type transitions.
+
+Backend / Engine:
+- Graph Builder (src/agentic/capabilities/ui/graph.py):
+  - Constructs a directed multi-graph (networkx.DiGraph):
+    - Nodes: ScreenNode (URL, route name, screenshot path, list of UIElements).
+    - Edges: TransitionEdge (source screen -> click/fill action -> target screen).
+  - Bounding box overlay compiler using Pillow (PIL) to draw visual boxes around discovered elements on screenshots.
+- Artifact: Serializes graph to ui_graph.json.
+
+Tools & Setup to Focus On:
+- networkx, Pillow (image processing), streamlit.components.v1 / pyvis (graph rendering).
+- Key Focus: Mapping non-URL state transitions (e.g. opening a drawer or tab without changing the URL).
+
+
+TASK 5: UI Discovery Quality Gate & Gap Reporting (Step 6)
+--------------------------------------------------------------------------------
+Goal:
+Verify if the discovered UI graph covers all necessary functional areas declared
+in requirements.json.
+
+Frontend / UI:
+- Coverage summary card in Streamlit (Discovered Screens: 92% of Requirements Covered).
+- Warning alert if key functional routes were unreachable.
+
+Backend / Engine:
+- Discovery Gate (src/agentic/capabilities/ui/gates.py):
+  - Compares ui_graph.json nodes against requirement area headings in requirements.json.
+  - Checks for unreached routes (e.g., 401/403 auth blockages, broken links).
+  - Branching: If discovery is sufficient -> proceed to Step 7. If incomplete -> generate crawl_gaps.md detailing missing/blocked pages.
+
+Tools & Setup to Focus On:
+- Gate validation logic, markdown report generator.
+- Key Focus: Identifying if auth failed silently during crawl.
+
+
+TASK 6: Semantic Test Realization Engine (Step 7)
+--------------------------------------------------------------------------------
+Goal:
+Bridge the semantic gap by translating Pack 2's abstract test steps into
+concrete Playwright DOM locators and Playwright actions.
+
+Frontend / UI:
+- Realization Mapper view showing original abstract step vs. realized Playwright locator.
+
+Backend / Engine:
+- LLM Realizer (src/agentic/capabilities/ui/realize.py):
+  - Consumes abstract test specs (test_specs.json) + discovered DOM (ui_graph.json).
+  - Maps step "Enter invalid email" -> locator input[name='user_email'], action fill, value "bad-email".
+  - Maps assertion "Error banner is shown" -> locator .alert-danger, assertion to_be_visible.
+- Dijkstra Pathfinding Solver (src/agentic/capabilities/ui/pathfinding.py):
+  - Uses networkx.shortest_path() on ui_graph.json to find prerequisite navigation clicks from Home screen -> Target test screen.
+
+Tools & Setup to Focus On:
+- langchain-openai (structured output schema RealizedTestPlan), networkx.
+- Key Focus: Choosing resilient selectors (getByRole, getByTestId) over fragile, breakage-prone XPath strings.
+
+
+TASK 7: Executable Test Plan Builder (Step 8)
+--------------------------------------------------------------------------------
+Goal:
+Compile realized test cases into a clean, strongly-typed JSON execution payload
+(executable_test_plan.json).
+
+Frontend / UI:
+- Tree view of Executable Test Scenarios, starting screens, navigation steps, typed actions, and assertions.
+
+Backend / Engine:
+- Test Plan Assembler (src/agentic/capabilities/ui/assemble.py):
+  - Stamps unique IDs (EXEC-TC-001).
+  - Bundles starting URL, setup navigation steps, ordered action sequence (goto, click, fill, select), timeouts, and expected assertions.
+- Artifact: Saves executable_test_plan.json.
+
+Tools & Setup to Focus On:
+- pydantic (ExecutableTestSuite, ExecutableTestCase, PlaywrightAction).
+- Key Focus: Ensuring test steps are fully self-contained and reproducible.
+
+
+TASK 8: Pre-Execution Safety Gate & Blocked Test Quarantine (Step 9)
+--------------------------------------------------------------------------------
+Goal:
+Perform pre-flight static safety checks on the executable test plan before spending
+browser time.
+
+Frontend / UI:
+- Pre-execution readiness matrix (Ready: 24 tests, Blocked: 2 tests).
+
+Backend / Engine:
+- Pre-Execution Gate (src/agentic/capabilities/ui/gates.py):
+  - Checks selector uniqueness in ui_graph.json (rejects ambiguous selectors matching multiple elements).
+  - Checks navigation path continuity.
+  - Checks required test data fixtures exist.
+  - Branching: Ready tests -> proceed to Step 10. Unresolvable tests -> quarantine into blocked_tests.md (no execution).
+
+Tools & Setup to Focus On:
+- Gate validation heuristics, blocked_tests.md markdown renderer.
+- Key Focus: Preventing test execution hangs caused by missing DOM elements.
+
+
+TASK 9: Live Parallel Playwright Execution Engine (Step 10)
+--------------------------------------------------------------------------------
+Goal:
+Execute the realized test cases against live browser instances in parallel contexts.
+
+Frontend / UI:
+- Real-time execution dashboard (Passing: 18, Failing: 2, Running: 4).
+
+Backend / Engine:
+- Parallel Execution Harness (src/agentic/capabilities/ui/executor.py):
+  - Launches parallel BrowserContext instances (e.g. 4 worker threads).
+  - Configures video recording (record_video_dir), Playwright tracing (context.tracing.start()), and action timeouts (5000ms).
+  - Navigates, executes typed actions, and evaluates DOM assertions.
+  - Captures full-page screenshots on step failures.
+
+Tools & Setup to Focus On:
+- playwright.async_api, asyncio.Semaphore (concurrency control).
+- Key Focus: Ensuring total state isolation between browser contexts to avoid test pollution.
+
+
+TASK 10: Multi-Modal Evidence & Artifact Collector (Step 11)
+--------------------------------------------------------------------------------
+Goal:
+Store, organize, and index full forensic evidence for every executed test case.
+
+Frontend / UI:
+- Media Gallery & Trace Viewer: Streamlit tab with embedded video player (.webm), full-page screenshot comparison, and one-click trace inspect button.
+
+Backend / Engine:
+- Artifact Collector (src/agentic/capabilities/ui/collector.py):
+  - Organizes evidence under runs/<run-id>/artifacts/execution/:
+    - screenshots/*.png (Annotated with element bounding boxes)
+    - videos/*.webm (Full video recording of test run)
+    - traces/*.zip (Playwright time-travel trace files)
+    - logs/console.log (Browser console logs & HTTP HAR traffic)
+
+Tools & Setup to Focus On:
+- Python shutil, zipfile, streamlit.video.
+- Key Focus: Low storage footprint via compression while preserving full debug detail.
+
+
+TASK 11: 6-Way Diagnostic Failure Classifier & Final Reporting (Steps 12 & 13)
+--------------------------------------------------------------------------------
+Goal:
+Automatically diagnose test failures to determine exact root cause and render
+final stakeholder reports.
+
+Frontend / UI:
+- Diagnostic Scorecard & Triage Badges (Bug, Locator Drift, Environment 500, Auth Error).
+- Interactive UI Drift Comparison table.
+
+Backend / Engine:
+- Failure Classifier (src/agentic/capabilities/ui/classifier.py):
+  - Analyzes failure exceptions, DOM snapshots, and network status codes into 6 buckets:
+    1. Application Failure: Assertion failed (real software bug).
+    2. Locator Drift: Element selector changed or moved.
+    3. Navigation Failure: Target page 404 or route timeout.
+    4. Authentication Failure: Session expired (HTTP 401/403).
+    5. Test-Data Failure: Missing database fixture.
+    6. Environment Failure: HTTP 500 / gateway crash.
+- Deliverables Renderer (src/agentic/capabilities/ui/render.py):
+  - Formats execution_report.md, ui_drift_report.md, failures_and_blockers.md, and execution_summary.json.
+
+Tools & Setup to Focus On:
+- Heuristic error parser + LLM diagnostic fallback, markdown templates.
+- Key Focus: Eliminating false alarms caused by flaky staging environments.
+
+================================================================================
+MASTER TASK SUMMARY MATRIX
+================================================================================
+Task 1  | Target Lifecycle & Auth | Server startup, Auth tokens, RBAC, Crawl policies | subprocess, Playwright storageState, pydantic
+Task 2  | Preflight Validation    | Pre-crawl health & DNS validation                  | urllib, httpx
+Task 3  | Playwright UI Discovery | Autonomous BFS crawler, ARIA accessibility tree   | Playwright Chromium, beautifulsoup4
+Task 4  | UI Knowledge Graph      | Directed graph of screens, elements & transitions  | networkx, Pillow (PIL), PyVis / D3.js
+Task 5  | UI Discovery Gate       | Coverage validation vs. requirements               | Python Gate logic
+Task 6  | Test Realizer & Paths   | Abstract spec -> selector mapping & Dijkstra       | langchain-openai, networkx
+Task 7  | Executable Plan Builder | Typed Playwright action & assertion compilation    | pydantic schemas
+Task 8  | Pre-Execution Gate      | Selector uniqueness & safety validation            | Python Gate logic
+Task 9  | Live Playwright Runner  | Parallel browser context execution                | playwright.async_api, asyncio
+Task 10 | Evidence Collector      | Media, screenshot, video & trace archiving         | zipfile, streamlit.video
+Task 11 | Failure Classifier      | 6-way error diagnostic triage & final reporting    | Diagnostic Classifier, Markdown templates
+================================================================================

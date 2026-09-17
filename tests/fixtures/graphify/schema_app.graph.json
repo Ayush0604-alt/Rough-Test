@@ -1,0 +1,107 @@
+{
+  "nodes": [
+    {
+      "id": "schema",
+      "label": "schema.sql",
+      "file_type": "code",
+      "source_file": "schema.sql",
+      "source_location": null,
+      "_origin": "ast"
+    },
+    {
+      "id": "schema_app_user",
+      "label": "app_user",
+      "file_type": "code",
+      "source_file": "schema.sql",
+      "source_location": "L3",
+      "_origin": "ast"
+    },
+    {
+      "id": "organisation",
+      "label": "organisation",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "schema_candidate",
+      "label": "candidate",
+      "file_type": "code",
+      "source_file": "schema.sql",
+      "source_location": "L17",
+      "_origin": "ast"
+    },
+    {
+      "id": "schema_trg_sync_stage",
+      "label": "trg_sync_stage",
+      "file_type": "code",
+      "source_file": "schema.sql",
+      "source_location": "L25",
+      "_origin": "ast"
+    },
+    {
+      "id": "sync_stage",
+      "label": "sync_stage",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    }
+  ],
+  "edges": [
+    {
+      "source": "schema",
+      "target": "schema_app_user",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "schema.sql",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "schema_app_user",
+      "target": "organisation",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "schema.sql",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "schema",
+      "target": "schema_candidate",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "schema.sql",
+      "source_location": "L17",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "schema",
+      "target": "schema_trg_sync_stage",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "schema.sql",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "schema_trg_sync_stage",
+      "target": "sync_stage",
+      "relation": "triggers",
+      "confidence": "EXTRACTED",
+      "source_file": "schema.sql",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_origin": "ast"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

@@ -1,0 +1,419 @@
+{
+  "nodes": [
+    {
+      "id": "app_init",
+      "label": "__init__.py",
+      "file_type": "code",
+      "source_file": "app/__init__.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main",
+      "label": "main.py",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_invoice",
+      "label": "Invoice",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L21",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "basemodel",
+      "label": "BaseModel",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_audit_region",
+      "label": "audit_region()",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L26",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "post",
+      "label": "post",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_create_invoice",
+      "label": "create_invoice()",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L31",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "get",
+      "label": "get",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_read_invoice",
+      "label": "read_invoice()",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L41",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_unused_reconciliation_helper",
+      "label": "_unused_reconciliation_helper()",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": "L48",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_rationale_1",
+      "label": "A deliberately small target codebase used by the extraction and gate tests. It\u2026",
+      "file_type": "rationale",
+      "source_file": "app/main.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_main_rationale_49",
+      "label": "Never called from anything reachable from an endpoint. A requirement traced\u2026",
+      "file_type": "rationale",
+      "source_file": "app/main.py",
+      "source_location": "L49",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_storage",
+      "label": "storage.py",
+      "file_type": "code",
+      "source_file": "app/storage.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "app_storage_save_invoice",
+      "label": "save_invoice()",
+      "file_type": "code",
+      "source_file": "app/storage.py",
+      "source_location": "L10",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "app_storage_load_invoice",
+      "label": "load_invoice()",
+      "file_type": "code",
+      "source_file": "app/storage.py",
+      "source_location": "L14",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "app_storage_backup_location",
+      "label": "backup_location()",
+      "file_type": "code",
+      "source_file": "app/storage.py",
+      "source_location": "L21",
+      "_callable": true,
+      "_origin": "ast"
+    },
+    {
+      "id": "app_storage_rationale_1",
+      "label": "Persistence for the sample app.",
+      "file_type": "rationale",
+      "source_file": "app/storage.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    }
+  ],
+  "edges": [
+    {
+      "source": "app_main",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L8",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "fastapi",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "pydantic",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_storage",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_main_invoice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_invoice",
+      "target": "basemodel",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_main_audit_region",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_create_invoice",
+      "target": "post",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L30",
+      "weight": 1.0,
+      "context": "decorator",
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_main_create_invoice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L31",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_create_invoice",
+      "target": "app_main_invoice",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L31",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_read_invoice",
+      "target": "get",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L40",
+      "weight": 1.0,
+      "context": "decorator",
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_main_read_invoice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_main_unused_reconciliation_helper",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L48",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_create_invoice",
+      "target": "app_main_audit_region",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L36",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_rationale_1",
+      "target": "app_main",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_rationale_49",
+      "target": "app_main_unused_reconciliation_helper",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L49",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_storage",
+      "target": "os",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/storage.py",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_storage",
+      "target": "app_storage_save_invoice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/storage.py",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_storage",
+      "target": "app_storage_load_invoice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/storage.py",
+      "source_location": "L14",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_storage",
+      "target": "app_storage_backup_location",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/storage.py",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_storage_rationale_1",
+      "target": "app_storage",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "app/storage.py",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_storage_save_invoice",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main",
+      "target": "app_storage_load_invoice",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_create_invoice",
+      "target": "app_storage_save_invoice",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "app/main.py",
+      "source_location": "L36",
+      "weight": 1.0,
+      "_origin": "ast"
+    },
+    {
+      "source": "app_main_read_invoice",
+      "target": "app_storage_load_invoice",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "app/main.py",
+      "source_location": "L42",
+      "weight": 1.0,
+      "_origin": "ast"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

@@ -1,0 +1,625 @@
+# Skill pack: codebase -> evidence-grounded requirements document.
+#
+# This manifest is the workflow. The graph builder compiles it into a LangGraph StateGraph, so
+# adding another pack (test-case generation, threat modelling, migration analysis) means adding a
+# directory like this one — not editing any code under src/agentic/graph/.
+#
+# The five SKILL.md files beside this manifest are unchanged and carry no orchestration metadata,
+# which keeps them portable to any other tool that reads the standard skill format.
+
+pack: codebase-requirements
+version: 1
+description: >-
+  Reverse-engineer any codebase into a requirements document whose every statement traces back to
+  real, implemented, externally reachable code.
+
+action_label: Extract requirements
+
+# Prepended to every llm step, so the grounding rules apply to synthesis, reduction, and repair
+# alike rather than being restated per step.
+master_skill: codebase-to-requirements-reverse-engineering
+
+steps:
+  # Phase 0 — Ingestion & inventory. Fails closed when there is nothing analysable, rather than
+  # fabricating a document from file names.
+  - id: ingest
+    skill: codebase-to-requirements-reverse-engineering
+    section: "Phase 0"
+    mode: deterministic
+    capability: ingest_repository
+    produces: [inventory]
+    on_fail: halt
+
+  # Phase 1 — Structural extraction, delegated to Graphify. One command covers 36 languages via
+  # local tree-sitter parsing, which is what removed the Python-only lock: every other language
+  # used to reach the graph as a bare FILE entity and produce nothing.
+  - id: graphify_extract
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: graphify_extract
+    consumes: [inventory]
+    produces: [graphify_raw]
+    on_fail: halt
+
+  # Phase 1b — Normalise Graphify's payload into the canonical schema. Split from the run above so
+  # a failure is attributable: a missing binary is not a mapping bug. This is also where end lines
+  # are reconstructed, because Graphify reports a start line and never a range.
+  - id: adapt_graph
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: adapt_graphify_graph
+    consumes: [inventory, graphify_raw]
+    produces: [graph]
+    on_fail: halt
+
+  # Phase 1c — Propose interaction-boundary candidates from graph shape. Nothing in Graphify's
+  # output marks a route or a command, so the signal is structural: a handler is invoked by a
+  # framework, never by the code beside it, so nothing in this repository calls it.
+  - id: propose_boundaries
+    skill: graphify-knowledge-graph-extraction
+    section: "Interaction boundaries"
+    mode: deterministic
+    capability: propose_boundary_candidates
+    consumes: [graph]
+    produces: [boundary_candidates]
+    on_fail: halt
+
+  # Phase 1d — Name the boundaries. The one model call in the extraction phase, and the price of
+  # language independence: syntactic detection worked for one language, this works for any. The
+  # model classifies a node; it never states a location, so a wrong answer costs a mislabelled
+  # boundary rather than a fabricated citation.
+  - id: classify_boundaries
+    skill: graphify-knowledge-graph-extraction
+    section: "Classifying a boundary candidate"
+    mode: llm
+    output_schema: BoundaryAssignments
+    consumes: [boundary_candidates]
+    produces: [boundary_assignments]
+    instructions: |-
+      Classify each candidate below. Return one assignment per candidate you are confident about,
+      and `NONE` for the rest.
+
+      Most candidates are not boundaries. A function nothing calls is usually dead code, a helper
+      only a test uses, or a public function of a library — not a place the outside world reaches
+      in. Choose a boundary class only when you can say what outside thing reaches this and how.
+
+      Copy `qualified_name` exactly as given. Leave `identifier` null unless the evidence shows a
+      literal route, command, or label.
+
+  # Phase 1e — Entry points contributed by registered adapters, and the coverage report that makes
+  # a missing paradigm visible. The classifier's answers arrive here as one adapter among any
+  # others, so every boundary in the run is created in one place and counted by one report.
+  - id: discover_entry_points
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: discover_entry_points
+    consumes: [inventory, graph, boundary_assignments]
+    produces: [graph, entry_point_coverage]
+    on_fail: warn_and_continue
+
+  # Phase 2 — Gate 1. Deterministic structural checks over the graph.
+  - id: gate_graph
+    skill: requirement-and-graph-validation-gates
+    section: "Gate 1"
+    mode: gate
+    capability: validate_graph
+    consumes: [graph]
+    produces: [graph_gate]
+    on_fail: halt
+
+  # Partition the graph around interaction boundaries. This is the cost-control step: it decides
+  # what slice of evidence each model call sees, so the model never reads raw source.
+  - id: plan_clusters
+    skill: evidence-grounded-requirement-synthesis
+    section: "Interaction boundaries"
+    mode: deterministic
+    capability: build_boundary_clusters
+    consumes: [graph]
+    produces: [clusters]
+    on_fail: halt
+
+  # Phase 3a — one model call per boundary cluster, in parallel.
+  - id: synthesize
+    skill: evidence-grounded-requirement-synthesis
+    mode: llm
+    fan_out: clusters
+    output_schema: BRDFragment
+    consumes: [clusters]
+    produces: [fragments]      # a shared state channel, not a file: many workers write at once
+    instructions: |-
+      You are looking at one interaction-boundary cluster from a larger codebase. Describe only
+      what this cluster's evidence supports. Do not speculate about the rest of the system, and do
+      not write a product purpose — a later step establishes that from every cluster together.
+
+      Work outward from the boundary. Its label is the product's own wording for what it offers
+      someone; `triggered_outcomes` and the workflow reachable from it are what that offer does.
+
+      You are working the bottom two tiers of the classification model. The top tier — the
+      business requirements this all serves — is written later, by the only step that sees every
+      cluster at once. Do not attempt one here and do not leave a placeholder for one.
+
+      **Apply the abstraction test to every behaviour before you write anything about it.** Ask,
+      in order, and stop at the first that is true. The answer goes in `abstraction_basis` and it
+      decides the classification; you do not choose the type separately.
+
+      1. `business_outcome` -- an outcome the product exists to deliver, that a sponsor would
+         recognise and that survives rebuilding the implementation. (Written later, not here.)
+      2. `external_capability` -- an actor outside the system can do this and observe the result
+         without knowing how it is built.
+      3. `internal_behaviour` -- the system must behave this way for a capability above it to
+         hold, whatever the implementation. A reasonable rewrite would still have to do it.
+      4. `domain_constraint` -- a rule the business imposes, true of the domain not of the code.
+      5. `platform_constraint` -- a limit the platform, protocol, runtime, or deployment imposes
+         rather than one the business chose.
+      6. `quality_property` -- a measurable property (a limit, a timeout, a guarantee) rather
+         than a behaviour.
+      7. `implementation_detail` -- none of the above.
+
+      **Answering `implementation_detail` is a correct and frequent outcome.** A function
+      existing, a helper being called, a variable being set, an internal step running, a
+      conditional being evaluated: none of these is a requirement merely because the code does
+      it. Ask what would be *required* of any correct implementation of this product, not what
+      this implementation happens to contain. If the behaviour would disappear in a reasonable
+      rewrite without anyone outside noticing, it is an implementation detail. Return it under
+      `observations` with the requirement it supports as its `parent` -- it is kept, cited, and
+      published in the traceability appendix. Nothing is lost by classifying honestly; a great
+      deal is lost by promoting a helper to a capability.
+
+      **Scaffolding is never a capability.** The work a system does to get itself ready to work
+      -- reading its own settings at start-up, constructing the objects it will use, wiring parts
+      together, opening a connection, preparing a place to keep things, remembering a value it
+      just computed -- is not something anyone outside the system asked for. Nobody commissioned
+      it, nobody can observe it, and every one of these would be done completely differently by a
+      reasonable rewrite while the product stayed identical. Whatever the code calls it, it is an
+      `implementation_detail`. The giveaway is that the sentence has no actor other than "the
+      system" and no outcome other than the system now being able to continue.
+
+      **Apply the same test to a name.** A behaviour is not a capability because the function
+      doing it has an important-sounding name, and it is not scaffolding because the function
+      doing it has a dull one. Read what the code does with the result: if something an outside
+      actor asked for depends on it, it is at least internal behaviour; if only the next line of
+      code depends on it, it is a detail.
+
+      Where the evidence supports it, return:
+
+      - a **functional requirement** for each externally observable capability this boundary
+        offers -- something an actor outside the system does and sees the result of. Two
+        capabilities are separate requirements whenever they are separately observable and
+        separately testable — someone could see one succeed and the other fail. Read the stages off *this*
+        packet: the named steps the traced workflow passes through, in this product's own
+        vocabulary. Do not fold them into one umbrella capability, and do not go looking for the
+        stages some other kind of product would have. A payments flow, a scheduling flow, a
+        moderation queue, and a query-answering flow decompose completely differently, and the
+        only correct decomposition is the one this evidence shows. Each carries three to eight
+        acceptance criteria drawn from the evidenced call parameters, configured defaults,
+        processing steps, return outcomes, fallbacks, and error handling shown in this packet.
+        Type each `functional` and leave `parent` null;
+      - a **business rule** for each explicit guard, refusal, accepted-input restriction, or
+        declared operating instruction. Give the triggering condition, the required behaviour, and
+        the observable consequence. A configuration value holding a declared operating instruction
+        is a policy, and among the strongest evidence a codebase carries. Type each
+        `business_rule`, and set `parent` to the **exact title** of the functional requirement
+        above that the rule constrains — a rule constrains a capability, so if you cannot name
+        the capability it applies to, you have found a processing branch rather than a policy;
+      - a **system requirement** for internal behaviour a capability depends on that no outside
+        actor observes directly, where a different implementation would still have to do it.
+        Basis `internal_behaviour`, `parent` the capability it enables, relation `enables`;
+      - a **technical constraint** for a limit the platform or protocol imposes rather than the
+        business. Basis `platform_constraint`, relation `constrains`;
+      - an **observation** for everything that failed the test above. Basis
+        `implementation_detail`, `parent` the requirement it is evidence for, relation
+        `evidences`;
+      - a **success criterion** only where the evidence fixes an observable pass/fail condition --
+        a declared refusal message, a fixed fallback response, a stated limit. Set `parent` to the
+        exact title of the requirement it validates.
+
+      **Do not write a requirement asserting that another requirement succeeded.** "The document
+      is indexed successfully", "the query returns without error", "the operation completes" are
+      not requirements; they are how you would check one. Put them in the `acceptance_criteria`
+      of the requirement they validate. A separate item saying a capability worked inflates the
+      count and gives a reviewer nothing to act on.
+
+      **Set `parent` and `parent_relation` by meaning, never by shared code.** Two findings in the
+      same file, module, or call chain are not thereby parent and child. Ask whether this item
+      makes the parent more specific (`refines`), makes it possible (`enables`), limits when it
+      applies (`constrains`), proves it (`validates`), or is evidence for it (`evidences`). If
+      none of those is true, leave both fields null -- an honest gap is reported, and a guessed
+      hierarchy is not.
+
+      Error handling is not a requirement of its own. A caught failure and the message it produces
+      are acceptance criteria of the requirement they protect — one error path reachable from
+      three callers is one behaviour, not three findings.
+
+      Sort a finding by what it asserts, not by how important it feels. If it says what a person
+      can accomplish, it is a functional requirement. If it says what the system must or must not
+      do and what happens when the condition holds, it is a business rule. An ordinary processing
+      branch — a field checked for presence before it is read — asserts nothing about the product:
+      it is not a rule, and it belongs in the acceptance criteria of the requirement it serves, if
+      anywhere.
+
+      Write every statement out in full, in the four-part shape the skill sets out: the actor,
+      the action and its object, the qualifier that identifies or conditions it, and the
+      observable outcome.
+
+      **The qualifier says what the actor supplies or which item it applies to — never how the
+      request reaches the system.** "by sending a request to the endpoint", "through the API",
+      "via the service", "by calling the interface" name the mechanism and say nothing about the
+      requirement: strike them and put what the actor actually provides there instead. If the
+      actor supplies nothing to identify, the qualifier is a condition on when the behaviour
+      applies, or it is absent — an absent qualifier is better than a sentence describing the
+      plumbing. This packet is where the qualifier and the outcome come from — the
+      boundary label says who is being addressed and in what words, the evidenced call parameters
+      say what they supply, and the return outcomes, fallbacks, and refusals say what is true
+      afterwards. A later step can re-file a finding, retype it, or merge it, but it cannot
+      recover a detail this packet held and the statement dropped. Set `persona` wherever the
+      boundary label or the declared documentation addresses someone, and `business_value`
+      wherever the traced workflow produces a stated result.
+
+      Cite each requirement at the span of the definition it rests on — the full line range the
+      packet gives for that node — and put that node's exact qualified name in `symbol`.
+
+      Set `requirement_type` on every item you return — `functional` or `business_rule`, the two
+      tiers available to you here. That field is what gets published, so an item filed in one list
+      but typed another is published as the type you gave it.
+
+      **Name the areas.** Set `area_code` to a 2-4 letter code for the part of the product most of
+      this cluster belongs to, and `area_name` to its heading in business words. Choose the code
+      from what the code *does*, not from where it lives, and invent it from this product's own
+      subject matter — there is no standard list to pick from. Choose it as though other clusters
+      will pick it too: clusters sharing a code have their requirements published together under
+      one heading, which is how a reader finds everything about one part of the product.
+
+      An area heading names **something the product does for someone**. It must survive the two
+      tests that catch a heading that is really a location: could a person who has never seen the
+      code say what they would get from this part of the product, and would the heading still be
+      right if the code were reorganised into completely different files? A heading taken from a
+      module, a package, a class, a layer, or a piece of the runtime fails both. If the only
+      honest name for a group is the name of where its code sits, the group is not a part of the
+      product and its findings belong under whichever capability they serve.
+
+      **One entry point often covers several unrelated areas, and each deserves its own.** A
+      single control can set off screening, routing, two different ways of producing an answer,
+      and record-keeping — five areas, not one. Where a requirement belongs to a different part of
+      the product than the cluster as a whole, set `area` on that requirement, and list every code
+      you used in `areas` with its heading. Filing everything under the entry point publishes one
+      lumped heading where the reader needs five, and hides whole capabilities inside a section
+      named after something else.
+
+      **Set `priority` from the code's own defaults, never from how important it feels.** `M` when
+      nothing guards the behaviour, or its flag defaults to on. `S` when a configuration flag, a
+      role check, or a setting that defaults off stands in front of it. `C` when the code itself
+      calls it legacy, deprecated, superseded, or opt-in.
+
+      **Also return, where and only where this cluster's evidence fixes one:**
+
+      - `data_requirements` — an invariant the stored data must hold: an enumerated vocabulary a
+        constraint declares, a uniqueness guarantee, an identifier scheme, a retention rule. A
+        schema constraint states policy more strongly than any code, because the database enforces
+        it regardless of what the code does. Quote the declared values when there are any.
+      - `integration_requirements` — one per external system this cluster depends on: what it is
+        used for, and what happens when it is unavailable. One per system, never one per call.
+      - `non_functional_requirements` — a quality property fixed concretely: a timeout, a size
+        cap, a retry bound, a concurrency guard, an authorisation gate, a masked secret. Only
+        where the evidence fixes something checkable; never a general aspiration.
+      - `reporting_requirements` — a view, export, listing, or summary someone reads, including
+        any ordering or filtering the evidence fixes.
+
+      Each of these carries evidence and a graph trace exactly like a functional requirement, and
+      each is rejected without them. Return an empty list rather than a speculative entry: a
+      family with nothing in it is a normal, correct result for most clusters.
+
+      Return **everything this packet evidences**, up to fourteen functional requirements, twelve
+      business rules, and eight success criteria. Those are ceilings for a genuinely rich cluster,
+      not targets — most clusters evidence far fewer, and padding to reach a number is the one
+      failure worse than stopping early. But do not stop early either: a packet showing thirteen
+      distinct intake behaviours should return thirteen, because nothing downstream will recover
+      the ones you leave out. Distinct means separately observable and separately testable.
+
+      If the packet genuinely holds more than these ceilings, keep the best-evidenced and say so
+      in `purpose_hint`, so the omission is on the record rather than silent.
+
+
+  # Phase 3b — repository-wide capability grouping. This is the step whose absence made the output
+  # read as a behaviour inventory. Every comparison before it required two candidates to *share
+  # code* — the same citation span, or a node in common on the call path — before their wording was
+  # even looked at. Fan-out workers analyse one boundary each, so two workers describing the same
+  # capability from the entry point and from the work behind it cite different lines by
+  # construction and were never compared. Nothing ever asked whether two candidates *mean* the same
+  # thing. This groups them by what they say, wherever in the repository they came from, and the
+  # groups are what `assemble` and `consolidate` then reason over.
+  - id: cluster_candidates
+    skill: requirement-consolidation-and-resolution
+    section: "1. Group by capability, not by code location"
+    mode: deterministic
+    capability: cluster_capabilities
+    consumes: [fragments]
+    produces: [capability_clusters]
+    on_fail: warn_and_continue
+
+  - id: digest_areas
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: digest_areas
+    consumes: [fragments, capability_clusters]
+    produces: [area_digest]
+    on_fail: halt
+
+  # Phase 3c — the top tier. This replaced `reduce`, and the replacement is the point of the
+  # rebuild. `reduce` was handed every finding and asked to return the finished document in one
+  # reply; with an 8k output ceiling that caps any repository at roughly a dozen requirements
+  # however much it was shown. This call reads titles and writes only what needs the whole
+  # picture: the purpose, the handful of outcomes, and which area serves which. Small in, small
+  # out, and it stays that way as the repository grows.
+  - id: elevate
+    skill: evidence-grounded-requirement-synthesis
+    mode: llm
+    output_schema: TopTier
+    consumes: [area_digest, graph]
+    produces: [top_tier]
+    instructions: |-
+      You are given a digest of every functional area found in this repository: the area code, a
+      business name, what its boundaries are, and the **titles** of the requirements already
+      written for it. The requirements themselves are already written out in full, already
+      grounded in cited evidence, and already carried into the document by the step after you.
+
+      **Do not restate any of them.** You are not merging or rewriting requirements. If you find
+      yourself composing a sentence that describes a single capability, stop — that requirement
+      already exists and yours would be a duplicate of it.
+
+      Your job is the three judgements no single cluster could make.
+
+      **1. What the product is.** Write `product_purpose` and `business_problem` from the areas
+      taken together and from `graph.declared_documentation`, which is what the project says
+      about itself. Write the purpose as what someone can now do that they could not before, and for
+      whom. Return null for either rather than inventing a plausible-sounding one.
+
+      **2. The business requirements.** These are the outcomes the product exists to deliver — the
+      ones that would appear in a one-paragraph description to someone who will never see the
+      code. Write one for each genuinely distinct outcome the areas add up to. A product of three
+      areas may have two; a platform of nineteen may have eight or ten. Judge by the work, not by
+      a target number.
+
+      Each must stand over at least one whole area. The test is that it survives rewriting the
+      implementation: if your statement stops being true when a screen is redesigned, it is a
+      capability and belongs below, not here. Never rename an area and call it an outcome — an
+      area is where work lives, an outcome is what someone gets.
+
+      Give each one acceptance criteria of its own: the observable conditions that would show the
+      outcome has been achieved across the areas beneath it.
+
+      **Leave `evidence` and `graph_path` empty on every business requirement.** You are shown
+      titles, never files or line numbers, so any citation you write is a guess — and a guessed
+      citation is caught by validation, which then deletes the outcome and orphans every
+      capability beneath it. An outcome's warrant is not a line of code; it is that these
+      capabilities, each already cited, add up to it. The step after you derives the citation
+      from the capabilities you bind, which is both honest and checkable.
+
+      **3. Bind every capability, one at a time.** Return one `bindings` entry per business
+      requirement, listing in `realised_by` the exact titles of the capabilities that realise it.
+      This is how hundreds of requirements attach to the top tier without any of them being
+      restated: you send titles, not statements.
+
+      **Bind by what a capability achieves, never by the area it was found under.** The areas in
+      the digest record where code lives, not what it is for. Capabilities grouped under one area
+      routinely serve different outcomes, and one outcome is routinely realised by capabilities
+      drawn from several areas — a product that lets someone do two unrelated things through one
+      entry point will show both under the same area, and binding the area would put them under
+      the same outcome, which is false. Read each title and decide what it is for.
+
+      A capability belongs under an outcome only if that outcome would be incomplete without it.
+      Where none of your outcomes needs a capability, leave it out of every binding: it is
+      published unattached and reported as a gap, which is honest. Placing it somewhere plausible
+      instead states something about the product that is not true. Never invent an outcome purely
+      to have somewhere to put an orphan; if several capabilities have nowhere to go, say so in
+      `open_questions`.
+
+      **Assumptions, out of scope, open questions.** Record what the evidence shows and no more.
+      An assumption is a condition that changes how the document should be read — single tenancy,
+      shared rather than per-user configuration, a stand-in left in place. Out of scope is a
+      capability a reader would assume a product like this has and which no area provides; say so
+      plainly, so nobody infers it. An open question is a genuine ambiguity a stakeholder must
+      settle. Leave any of them empty rather than filling it.
+
+  # Phase 3d — assembly. Deterministic, and the reason the requirement count now tracks the
+  # codebase. Every grounded finding from every cluster is carried through unchanged and attached
+  # to the business requirement its area was bound to. Nothing is summarised or dropped for space:
+  # the only claims that leave are the ones a gate rejects, on the record.
+  - id: assemble
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: assemble_requirements
+    consumes: [fragments, top_tier, capability_clusters]
+    produces: [brd]
+    on_fail: halt
+
+  # Phase 3e — consolidation. Everything from here to `resolve` belongs to one responsibility, and
+  # it is the responsibility the workflow used to skip: taking a repository-wide pile of candidates
+  # and settling it into a requirement set. Levels, duplicates, parameterised families, hierarchy.
+  - id: consolidate
+    skill: requirement-consolidation-and-resolution
+    section: "2. Decide the level of every candidate"
+    mode: deterministic
+    capability: consolidate_requirements
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: halt
+
+  # Does the claim say what the code it cites actually does? Every other check compares a statement
+  # to another statement or to a blacklist; this one compares it to the evidence. Its verdicts are
+  # recorded on the items and acted on by `resolve`, which is the step that decides.
+  - id: check_correspondence
+    skill: requirement-consolidation-and-resolution
+    section: "4. Settle conflicts against the evidence"
+    mode: deterministic
+    capability: validate_correspondence
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: warn_and_continue
+
+  # Confidence recomputed from the evidence rather than asserted by whoever wrote the claim. The
+  # model's own number is kept alongside so the two can be compared.
+  - id: score_confidence
+    skill: requirement-consolidation-and-resolution
+    mode: deterministic
+    capability: recalibrate_confidence
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: warn_and_continue
+
+  # Implementation leakage, moved out of the statement and into the traceability model rather than
+  # left for the gate to reject the whole requirement over. Runs BEFORE the gate on purpose: a
+  # grounded capability whose statement happens to name the control it is reached through is a
+  # wording problem, and deleting the requirement over it discards checked evidence.
+  - id: strip_implementation
+    skill: requirement-consolidation-and-resolution
+    section: "5. Keep the implementation out of the statement"
+    mode: deterministic
+    capability: review_implementation_leakage
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: warn_and_continue
+
+  # Detection is not resolution. Every candidate leaves here with exactly one disposition, and what
+  # cannot be published leaves the document for `unresolved_candidates` — with its evidence and the
+  # reason, so nothing is deleted and nothing unsettled is published as though it were.
+  - id: resolve
+    skill: requirement-consolidation-and-resolution
+    section: "6. Give every candidate a disposition"
+    mode: deterministic
+    capability: resolve_candidates
+    consumes: [brd, graph]
+    produces: [brd, unresolved_candidates]
+    on_fail: warn_and_continue
+
+  # Acceptance criteria last, once the set is final. A criterion written against a candidate that
+  # is later merged, reclassified or dropped either disappears with it or follows it onto a
+  # requirement it was never about. This also records the assumptions and open questions the
+  # evidence forces, so the document says which parts it is unsure of.
+  - id: derive_criteria
+    skill: requirement-consolidation-and-resolution
+    section: "Acceptance criteria come last"
+    mode: deterministic
+    capability: hedge_requirements
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: warn_and_continue
+
+  # Deterministic preparation, so the gate judges claims rather than bookkeeping. Stamps the
+  # identifiers the repair and quarantine steps address items by, and corrects citation labels the
+  # model mis-filled. Never touches a statement, a file path, or a line range.
+  - id: prepare_claims
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: prepare_claims
+    consumes: [brd, graph]
+    produces: [brd]
+    on_fail: halt
+
+  # Phase 4 — Gate 2. Re-checks the surviving claims against the real file system, not just the
+  # graph: cited files must exist, cited lines must be plausible, statements must stay in business
+  # language.
+  - id: gate_requirements
+    skill: requirement-and-graph-validation-gates
+    section: "Gate 2"
+    mode: gate
+    capability: validate_requirements
+    consumes: [brd, graph]
+    produces: [requirement_gate]
+    next: final_check          # the pass path
+    on_fail: repair
+    repair_step: repair
+    max_repairs: 3
+    exhausted_step: quarantine
+
+  # Bounded corrective pass. Receives the gate's own issue list and must drop or fix what failed
+  # rather than restating it.
+  - id: repair
+    skill: evidence-grounded-requirement-synthesis
+    mode: llm
+    output_schema: RepairedItems
+    consumes: [brd, requirement_gate]
+    produces: [repairs]
+    next: apply_repairs
+    instructions: >-
+      The validation gate rejected part of the requirements set. `brd.items_to_fix` holds those
+      claims and only those; `requirement_gate.rejected_items` says what is wrong with each, by
+      id. Every other claim in the document passed and is kept exactly as it is by the step after
+      you, so return **only** the items you fixed, each carrying its original `id`.
+
+      Do not restate the document. Returning claims that were not rejected does not preserve them
+      -- they are preserved anyway -- and any you do return are ignored.
+
+      A rejection for technical vocabulary is a wording problem, not a grounding problem: reword
+      that statement in business language and keep the claim, with its evidence untouched. The
+      rejection names the exact term. Remove that word and every form of it — a term rejected as
+      "index" is still rejected as "indexing" or "indexed" — and describe what the person gets
+      instead of how the system stores it.
+
+      Reword at full length. The failing term is one word; deleting the sentence around it to be
+      safe loses the actor, the qualifier, and the outcome, and trades a rejected statement for a
+      thin one. Keep the four-part shape and replace the offending word with what the person
+      experiences.
+
+      A rejection naming an acceptance criterion works the same way and is fixed the same way:
+      the gate quotes the criterion it rejected. Rewrite that one criterion as something a person
+      could observe without knowing how the system is built, and leave the requirement and its
+      other criteria alone. Deleting the criterion is a last resort — it is a check a reviewer was
+      going to use.
+
+      Leave every field other than the rejected statements alone. Acceptance criteria, personas,
+      business values, and untouched statements passed the gate already; rewriting them here is
+      how a repair pass quietly flattens a document it was only asked to fix.
+
+      Delete only claims whose evidence cannot support them. Inventing new evidence to rescue a
+      claim is never acceptable.
+
+  # Put the repaired claims back and carry everything else across untouched. Deterministic, and
+  # the reason a rejection over one phrase can no longer shrink the whole document: a claim the
+  # gate never rejected cannot be altered here at all.
+  - id: apply_repairs
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: apply_repairs
+    consumes: [brd, repairs, requirement_gate]
+    produces: [brd]
+    next: prepare_claims          # repaired output needs the same preparation as first-pass output
+    on_fail: halt
+
+  # Reached only when the repair budget is spent: remove what could not be grounded so an honest,
+  # thinner document can still be produced. Deterministic — no model gets to argue for keeping a
+  # claim the gate rejected.
+  - id: quarantine
+    skill: requirement-and-graph-validation-gates
+    mode: deterministic
+    capability: quarantine_requirements
+    consumes: [brd, requirement_gate]
+    produces: [brd]
+    next: final_check
+
+  # The last look at the finished set, and the only one that can see it. Every stage before this
+  # changes the set, so properties of the whole — a duplicate title, a relation pointing at
+  # nothing, a cycle in the chain, an unsettled candidate that slipped through — are invisible
+  # until nothing is going to move again. Cycles and dangling relations are corrected because they
+  # produce a document a consumer cannot walk; everything else is reported for a person.
+  - id: final_check
+    skill: requirement-consolidation-and-resolution
+    section: "What must be true when this stage finishes"
+    mode: deterministic
+    capability: validate_synthesis
+    consumes: [brd]
+    produces: [brd, synthesis_findings]
+    on_fail: warn_and_continue
+
+
+
+  # Phase 5 — Deliverables. Always runs, even when little or nothing grounded, so the gap analysis
+  # can explain why coverage is thin.
+  - id: render
+    skill: traceable-requirements-deliverables
+    mode: deterministic
+    capability: render_deliverables
+    consumes:
+      [brd, graph, inventory, graph_gate, requirement_gate, unresolved_candidates,
+       synthesis_findings]
+    produces: [deliverables]
+    on_fail: warn_and_continue

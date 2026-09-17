@@ -1,0 +1,35 @@
+{
+  "name": "py_worker",
+  "paradigm": "event_driven",
+  "primary_language": "Python",
+  "languages": [
+    "Python"
+  ],
+  "notes": "Every entry point is registered with a broker or scheduler by decorator. None is detected today, so the baseline is zero and the whole paradigm is invisible.",
+  "entry_points": [
+    {
+      "class": "EVENT_CONSUMER",
+      "id": "order.placed",
+      "effect": "mutate"
+    },
+    {
+      "class": "EVENT_CONSUMER",
+      "id": "payment.settled",
+      "effect": "mutate"
+    },
+    {
+      "class": "SCHEDULED_JOB",
+      "id": "nightly_purge",
+      "effect": "mutate"
+    }
+  ],
+  "domain_policy_artifacts": [
+    {
+      "file": "store.py",
+      "kind": "constant",
+      "policy": "BASKET_TTL_HOURS governs when a basket expires"
+    }
+  ],
+  "selection_cap_for_measurement": 4,
+  "fixture_dir": "tests/fixtures/corpus/py_worker"
+}

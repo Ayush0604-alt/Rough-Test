@@ -1,0 +1,5 @@
+# Operating limits agreed with the department.
+max_items_per_borrower: 3
+loan_period_days: 14
+overdue_escalation_days: 7
+reconciliation_hour: 2

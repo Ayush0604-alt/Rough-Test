@@ -1,0 +1,60 @@
+{
+  "multi_qa": {
+    "by_type": {
+      "business": 2,
+      "business_rule": 4,
+      "functional": 7,
+      "system": 3
+    },
+    "citation_resolution_rate": 1.0,
+    "citations": 17,
+    "citations_resolved": 17,
+    "confidence_histogram": {
+      "0.72": 4,
+      "0.95": 4,
+      "1.0": 8
+    },
+    "distinct_units_cited": 14,
+    "duplicate_titles": 0,
+    "duplication_rate": 0.0,
+    "empty_acceptance_criteria": 5,
+    "empty_assumptions": 16,
+    "empty_open_questions": 16,
+    "file_types_cited": {
+      "py": 17
+    },
+    "relation_without_parent": 2,
+    "requirements": 16,
+    "source": "runs\\7d1bdadb-ec04-44dd-95b9-6e9e3c8a4e33\\artifacts\\requirements.json"
+  },
+  "talent_scooper": {
+    "by_type": {
+      "business": 6,
+      "business_rule": 21,
+      "functional": 31,
+      "success_criterion": 2
+    },
+    "citation_resolution_rate": 0.9852941176470589,
+    "citations": 68,
+    "citations_resolved": 67,
+    "confidence_histogram": {
+      "0.72": 14,
+      "0.85": 6,
+      "1.0": 40
+    },
+    "distinct_units_cited": 50,
+    "duplicate_titles": 2,
+    "duplication_rate": 0.03333333333333333,
+    "empty_acceptance_criteria": 26,
+    "empty_assumptions": 60,
+    "empty_open_questions": 60,
+    "file_types_cited": {
+      "md": 6,
+      "py": 56,
+      "yml": 6
+    },
+    "relation_without_parent": 0,
+    "requirements": 60,
+    "source": "runs\\be724185-13b0-4bd5-9e9e-dcfb17ff726a\\artifacts\\requirements.json"
+  }
+}

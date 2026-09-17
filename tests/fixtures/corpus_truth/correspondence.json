@@ -1,0 +1,502 @@
+{
+  "_note": [
+    "Ground truth for the correspondence validator, held outside the analysed tree so it is",
+    "never mistaken for source. Each fixture carries two lists.",
+    "",
+    "`supported` are claims that are TRUE of the fixture and cite the right lines. They measure",
+    "false rejection: any of these the validator rejects is a claim it would have wrongly marked",
+    "in a real run. The budget is 10% per fixture, independently.",
+    "",
+    "`contradicted` are claims that are FALSE of the fixture, each written to fail one specific",
+    "structural check named in `expect_check`. They measure whether the deterministic half earns",
+    "its place: every one must be caught with no model call.",
+    "",
+    "Statements are written the way the synthesis skill asks for them -- actor, action, object,",
+    "qualifier -- so the measurement reflects the wording the validator will actually meet.",
+    "",
+    "`entailment_only` are claims that are FALSE but that no structural check can catch without",
+    "over-rejecting. They are recorded rather than dropped so the boundary between the two halves",
+    "stays visible and honest: the structural half must NOT reject these, and the entailment half",
+    "is what they are for."
+  ],
+  "py_service": {
+    "supported": [
+      {
+        "title": "List held orders",
+        "statement": "A client shall be able to retrieve the list of orders currently held, so that the full set can be reviewed.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 20,
+            "line_end": 23
+          }
+        ]
+      },
+      {
+        "title": "Retrieve one order",
+        "statement": "A client shall be able to retrieve a single order by its reference, and be told when no such order exists.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 26,
+            "line_end": 32
+          }
+        ]
+      },
+      {
+        "title": "Place a new order",
+        "statement": "A client shall be able to create a new order by supplying its details, so that it enters the queue for fulfilment.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 47,
+            "line_end": 52
+          }
+        ]
+      },
+      {
+        "title": "Confirm an order",
+        "statement": "A client shall be able to confirm an order, so that its state is recorded as confirmed and fulfilment may begin.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 55,
+            "line_end": 60
+          }
+        ]
+      },
+      {
+        "title": "Amend a delivery address",
+        "statement": "A client shall be able to update only the delivery address held against an order, leaving its other details unchanged.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 70,
+            "line_end": 75
+          }
+        ]
+      },
+      {
+        "title": "Cancel an order",
+        "statement": "A client shall be able to cancel an order, so that it is no longer fulfilled.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 78,
+            "line_end": 81
+          }
+        ]
+      },
+      {
+        "title": "Order ceiling",
+        "statement": "An order whose total exceeds the approved ceiling shall be refused rather than accepted.",
+        "requirement_type": "business_rule",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 47,
+            "line_end": 52
+          }
+        ]
+      },
+      {
+        "title": "Report service health",
+        "statement": "A client shall be able to check that the service is answering, so that availability can be monitored.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 41,
+            "line_end": 44
+          }
+        ]
+      },
+      {
+        "title": "Load an order record",
+        "statement": "The system shall load a stored order by its identifier when one is requested.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "app/store.py",
+            "line_start": 13,
+            "line_end": 14
+          }
+        ]
+      },
+      {
+        "title": "Retain order state",
+        "statement": "The system shall save an order so that its details are retained between requests.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "app/store.py",
+            "line_start": 22,
+            "line_end": 24
+          }
+        ]
+      }
+    ],
+    "contradicted": [
+      {
+        "title": "Store on listing",
+        "statement": "A client shall be able to create and store a new order by listing the orders currently held.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 20,
+            "line_end": 23
+          }
+        ],
+        "expect_check": "effect_agreement",
+        "why": "Asserts a change while citing an entry point declared read-only."
+      },
+      {
+        "title": "Unrelated subject",
+        "statement": "A payroll administrator shall be able to calculate statutory tax withholding for each employee pension contribution.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 20,
+            "line_end": 23
+          }
+        ],
+        "expect_check": "lexically_anchored",
+        "why": "Shares no substantive word with anything at the cited lines."
+      },
+      {
+        "title": "Whole file cited",
+        "statement": "A client shall be able to manage every aspect of an order through the service.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 1,
+            "line_end": 900
+          }
+        ],
+        "expect_check": "span_adequate",
+        "why": "Cites more code than can be evidence for one sentence."
+      },
+      {
+        "title": "Nothing at the line",
+        "statement": "A client shall be able to export an order to an external accounting ledger.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line_start": 4,
+            "line_end": 4
+          }
+        ],
+        "expect_check": "resolves_to_known_code",
+        "why": "The cited line holds nothing the extractors recognised."
+      },
+      {
+        "title": "No evidence",
+        "statement": "A client shall be able to receive a notification whenever an order changes state.",
+        "requirement_type": "functional",
+        "evidence": [],
+        "expect_check": "cites_something",
+        "why": "Cites nothing at all."
+      },
+      {
+        "title": "Declaration as a capability",
+        "statement": "A client shall be able to browse the stored orders table directly, so that every order row can be inspected.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "schema.sql",
+            "line_start": 2,
+            "line_end": 8
+          }
+        ],
+        "expect_check": "actor_reachable",
+        "why": "Cites a table declaration that no entry point can reach; nothing exposes it."
+      }
+    ],
+    "entailment_only": [
+      {
+        "title": "Internal code described as a capability",
+        "statement": "A client shall be able to save an order directly, so that the stored details are updated.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "app/store.py",
+            "line_start": 22,
+            "line_end": 24
+          }
+        ],
+        "why": "save_order IS reachable from an endpoint, so the fault is the word 'directly'. Rejecting this structurally would mean rejecting every claim that cites the code behind a handler."
+      }
+    ]
+  },
+  "py_cli": {
+    "supported": [
+      {
+        "title": "Report a reconciliation summary",
+        "statement": "An operator shall be able to request a reconciliation summary for a period without changing any balance.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "tool.py",
+            "line_start": 11,
+            "line_end": 13
+          }
+        ]
+      },
+      {
+        "title": "Reconcile a period",
+        "statement": "An operator shall be able to reconcile a period, so that the corrected balances are written.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "tool.py",
+            "line_start": 16,
+            "line_end": 18
+          }
+        ]
+      },
+      {
+        "title": "Post a manual adjustment",
+        "statement": "An operator shall be able to post a manual adjustment against a single account.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "tool.py",
+            "line_start": 21,
+            "line_end": 25
+          }
+        ]
+      },
+      {
+        "title": "Adjustment ceiling",
+        "statement": "An adjustment whose amount exceeds the manual posting limit shall be refused.",
+        "requirement_type": "business_rule",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 16,
+            "line_end": 19
+          }
+        ]
+      },
+      {
+        "title": "Zero adjustment refused",
+        "statement": "An adjustment of zero shall be refused, since it changes nothing.",
+        "requirement_type": "business_rule",
+        "evidence": [
+          {
+            "file": "tool.py",
+            "line_start": 21,
+            "line_end": 25
+          }
+        ]
+      },
+      {
+        "title": "Summarise a period",
+        "statement": "The system shall summarise the balances held for a period when a report is requested.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 6,
+            "line_end": 7
+          }
+        ]
+      },
+      {
+        "title": "Dry run by default",
+        "statement": "The system shall reconcile without writing balances unless writing is explicitly requested.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 10,
+            "line_end": 13
+          }
+        ]
+      }
+    ],
+    "contradicted": [
+      {
+        "title": "Unrelated subject",
+        "statement": "An operator shall be able to schedule a courier collection for a warehouse despatch note.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 6,
+            "line_end": 7
+          }
+        ],
+        "expect_check": "lexically_anchored",
+        "why": "Shares no substantive word with the cited code."
+      },
+      {
+        "title": "No evidence",
+        "statement": "An operator shall be able to reverse a posted adjustment within the same period.",
+        "requirement_type": "functional",
+        "evidence": [],
+        "expect_check": "cites_something",
+        "why": "Cites nothing at all."
+      },
+      {
+        "title": "Declaration as a capability",
+        "statement": "An operator shall be able to raise the maximum adjustment limit, so that larger postings are accepted.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 3,
+            "line_end": 3
+          }
+        ],
+        "expect_check": "actor_reachable",
+        "why": "Cites a declared constant no entry point reaches; nothing lets an operator change it."
+      }
+    ],
+    "entailment_only": [
+      {
+        "title": "Internal code described as a capability",
+        "statement": "An operator shall be able to apply an adjustment to the ledger directly.",
+        "requirement_type": "functional",
+        "evidence": [
+          {
+            "file": "ledger.py",
+            "line_start": 16,
+            "line_end": 19
+          }
+        ],
+        "why": "apply_adjustment IS reachable from the CLI entry, so only the wording is wrong."
+      }
+    ]
+  },
+  "py_worker": {
+    "supported": [
+      {
+        "title": "Send a receipt on order placement",
+        "statement": "The system shall send the customer a receipt once an order has been placed.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "tasks.py",
+            "line_start": 11,
+            "line_end": 14
+          }
+        ]
+      },
+      {
+        "title": "Record a settled payment",
+        "statement": "The system shall record that a payment has settled, so that the order may be fulfilled.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "tasks.py",
+            "line_start": 17,
+            "line_end": 20
+          }
+        ]
+      },
+      {
+        "title": "Purge expired baskets",
+        "statement": "The system shall remove expired baskets on a daily cycle so that they do not accumulate.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "tasks.py",
+            "line_start": 23,
+            "line_end": 26
+          }
+        ]
+      },
+      {
+        "title": "Mark a payment settled",
+        "statement": "The system shall mark an order as settled when its payment clears.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "store.py",
+            "line_start": 5,
+            "line_end": 6
+          }
+        ]
+      },
+      {
+        "title": "Remove expired baskets",
+        "statement": "The system shall purge baskets that have passed their retention window.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "store.py",
+            "line_start": 9,
+            "line_end": 10
+          }
+        ]
+      }
+    ],
+    "contradicted": [
+      {
+        "title": "Unrelated subject",
+        "statement": "The system shall reconcile quarterly value added tax returns against the filed statutory accounts.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "tasks.py",
+            "line_start": 23,
+            "line_end": 26
+          }
+        ],
+        "expect_check": "lexically_anchored",
+        "why": "Shares no substantive word with the cited code."
+      },
+      {
+        "title": "No evidence",
+        "statement": "The system shall retry a failed notification three times before abandoning it.",
+        "requirement_type": "system",
+        "evidence": [],
+        "expect_check": "cites_something",
+        "why": "Cites nothing at all."
+      }
+    ]
+  },
+  "go_service": {
+    "supported": [
+      {
+        "title": "Per-order reservation limit",
+        "statement": "A reservation shall not exceed the per-order limit, so that stock is not held back from other customers.",
+        "requirement_type": "business_rule",
+        "evidence": [
+          {
+            "file": "README.md",
+            "line_start": 1,
+            "line_end": 12
+          }
+        ]
+      }
+    ],
+    "contradicted": [
+      {
+        "title": "Unrelated subject",
+        "statement": "An administrator shall be able to configure the payroll calendar for each regional subsidiary.",
+        "requirement_type": "system",
+        "evidence": [
+          {
+            "file": "README.md",
+            "line_start": 1,
+            "line_end": 12
+          }
+        ],
+        "expect_check": "lexically_anchored",
+        "why": "Shares no substantive word with the cited documentation."
+      }
+    ]
+  }
+}

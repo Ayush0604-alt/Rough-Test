@@ -1,0 +1,45 @@
+{
+  "name": "py_cli",
+  "paradigm": "cli_batch",
+  "primary_language": "Python",
+  "languages": [
+    "Python"
+  ],
+  "notes": "Subcommands are argparse subparsers, which the system does not detect today. Ground truth records what is present, not what is currently found.",
+  "entry_points": [
+    {
+      "class": "CLI_ENTRY",
+      "id": "tool.main!cli",
+      "effect": "mutate"
+    },
+    {
+      "class": "SCRIPT_ENTRY",
+      "id": "tool!__main__",
+      "effect": "mutate"
+    },
+    {
+      "class": "CLI_COMMAND",
+      "id": "report",
+      "effect": "read"
+    },
+    {
+      "class": "CLI_COMMAND",
+      "id": "reconcile",
+      "effect": "mutate"
+    },
+    {
+      "class": "CLI_COMMAND",
+      "id": "adjust",
+      "effect": "mutate"
+    }
+  ],
+  "domain_policy_artifacts": [
+    {
+      "file": "ledger.py",
+      "kind": "constant",
+      "policy": "MAX_ADJUSTMENT caps a manual posting"
+    }
+  ],
+  "selection_cap_for_measurement": 4,
+  "fixture_dir": "tests/fixtures/corpus/py_cli"
+}

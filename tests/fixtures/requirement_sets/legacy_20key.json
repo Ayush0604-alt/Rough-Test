@@ -1,0 +1,812 @@
+[
+  {
+    "id": "BR-001",
+    "type": "business",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "business_outcome",
+    "title": "Manage batch operations",
+    "statement": "Users shall be able to manage batch operations, so that they can efficiently handle multiple candidates or processes at once.",
+    "rationale": "This requirement is supported by various endpoints under the Batch Management area, allowing users to retrieve, archive, and manage batches.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the published interface produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/backup.py",
+        "line_start": 32,
+        "line_end": 34,
+        "symbol": "resume-agent-PROD.app.api.backup.get_list"
+      }
+    ],
+    "graph_path": [
+      "GET /backup/list",
+      "resume-agent-PROD.app.api.backup.get_list"
+    ],
+    "assumptions": [
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-CAND-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Delete a candidate's note",
+    "statement": "An administrator shall be able to delete a specific note associated with a candidate by providing the candidate's unique identifier and the note's identifier, so that the note is permanently removed from the system.",
+    "rationale": "This functionality is implemented in the DELETE /candidates/{candidate_id}/note endpoint.",
+    "persona": "administrator",
+    "business_value": "The candidate's note is successfully deleted and the action is recorded in the audit log.",
+    "acceptance_criteria": [
+      "The candidate's note is removed from the system when a valid candidate ID is provided.",
+      "An entry is created in the Actions Audit Log indicating the note deletion, including the text of the note and the user who deleted it.",
+      "If there is no note associated with the candidate, a 404 error is returned with the message 'This candidate has no note to delete.'",
+      "The note is successfully deleted when the correct identifiers are provided.",
+      "An error message is returned if the note does not exist.",
+      "The system confirms the deletion with a success message."
+    ],
+    "confidence": 0.3,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 767,
+        "line_end": 770,
+        "symbol": "resume-agent-PROD.app.api.rounds.delete_candidate_note"
+      },
+      {
+        "file": "resume-agent-PROD/app/pipeline/mail/run_local.py",
+        "line_start": 142,
+        "line_end": 157,
+        "symbol": "resume-agent-PROD.app.pipeline.mail.run_local.main!cli"
+      }
+    ],
+    "graph_path": [
+      "DELETE /candidates/{candidate_id}/note",
+      "resume-agent-PROD.app.api.rounds.delete_candidate_note",
+      "resume-agent-PROD.app.pipeline.mail.run_local.main!cli"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Delete a candidate's note"
+    ],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-CAND-02",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Deallocate a candidate's question bank",
+    "statement": "An administrator shall be able to delete a candidate's question bank allocation by supplying the candidate's unique identifier, so that the candidate's question bank is no longer associated with their profile.",
+    "rationale": "This is supported by the DELETE endpoint which calls the deallocate_candidate_question_bank function, which in turn interacts with the database to remove the allocation.",
+    "persona": "administrator",
+    "business_value": "The candidate's question bank is no longer associated with their profile.",
+    "acceptance_criteria": [
+      "The candidate's question bank allocation is removed from the database when the request is successful.",
+      "An appropriate error message is returned if the candidate ID does not exist.",
+      "The system confirms the deletion with a success response."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/interview.py",
+        "line_start": 1538,
+        "line_end": 1541,
+        "symbol": "resume-agent-PROD.app.api.interview.delete"
+      }
+    ],
+    "graph_path": [
+      "DELETE /candidates/{candidate_id}/question-bank-allocation",
+      "resume-agent-PROD.app.api.interview.deallocate_candidate_question_bank"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-INT-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Delete Pending Intake Item",
+    "statement": "An administrator shall be able to delete a pending item by supplying its unique identifier, so that the item is removed from and its files are purged.",
+    "rationale": "This is supported by the DELETE /intake/pending/{e_id} endpoint, which calls the intake_discard function to remove the item from the queue.",
+    "persona": "administrator",
+    "business_value": "the intake item is no longer pending and its files are purged",
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/mail.py",
+        "line_start": 169,
+        "line_end": 169,
+        "symbol": "resume-agent-PROD.app.api.mail.delete"
+      }
+    ],
+    "graph_path": [
+      "DELETE /intake/pending/{e_id}",
+      "resume-agent-PROD.app.api.mail.intake_discard"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-QB-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Delete a question bank",
+    "statement": "An administrator shall be able to delete a question bank by supplying its unique identifier, so that the specified question bank and its associated allocations and responses are permanently removed from the system.",
+    "rationale": "This is supported by the DELETE /question-banks/{qb_id} endpoint, which calls the delete_question_bank function that performs the deletion in the database.",
+    "persona": "administrator",
+    "business_value": "The question bank is removed from the system, ensuring it is no longer accessible or usable.",
+    "acceptance_criteria": [
+      "The system shall return a 404 error if the question bank ID does not exist.",
+      "The system shall return a 403 error if the user does not have the required permissions to delete the question bank.",
+      "The system shall confirm the deletion of the question bank with a success message."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/interview.py",
+        "line_start": 1348,
+        "line_end": 1348,
+        "symbol": "resume-agent-PROD.app.api.interview.delete_question_bank"
+      }
+    ],
+    "graph_path": [
+      "DELETE /question-banks/{qb_id}",
+      "resume-agent-PROD.app.api.interview.delete_question_bank"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-META-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Retrieve application metadata",
+    "statement": "A user shall be able to retrieve non-sensitive deploy by sending a request to the endpoint, so that the application displays the environment label in its top bar.",
+    "rationale": "The evidence shows that the GET /api/v1/meta endpoint is implemented and exposes the metadata through the resume-agent-PROD.app.main.meta function, which is designed to return non-sensitive deploy metadata.",
+    "persona": "user",
+    "business_value": "the application displays the environment label in its top bar",
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/main.py",
+        "line_start": 222,
+        "line_end": 222,
+        "symbol": "resume-agent-PROD.app.main.meta"
+      }
+    ],
+    "graph_path": [
+      "GET /api/v1/meta",
+      "resume-agent-PROD.app.main.meta"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-BK-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Check Backup Health",
+    "statement": "A user shall be able to check the of the system, so that they can verify its operational status.",
+    "rationale": "This is supported by the GET /backup/health endpoint, which is designed to return the health status of the backup system.",
+    "persona": "user",
+    "business_value": "the user can confirm the backup system is operational",
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/backup.py",
+        "line_start": 27,
+        "line_end": 29,
+        "symbol": "resume-agent-PROD.app.api.backup.get_health"
+      }
+    ],
+    "graph_path": [
+      "GET /backup/health",
+      "resume-agent-PROD.app.api.backup.get_health"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "FR-AN-02",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Rerun analysis prompts for candidates",
+    "statement": "Users shall be able to rerun analysis prompts for candidates, so that they can refresh or update the analysis based on new inputs or configurations.",
+    "rationale": "This requirement is supported by the endpoint POST /analysis-prompt/rerun, which allows users to rerun analysis prompts for candidates.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the published interface produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/extraction_settings.py",
+        "line_start": 115,
+        "line_end": 115,
+        "symbol": "post"
+      }
+    ],
+    "graph_path": [
+      "POST /analysis-prompt/rerun",
+      "resume-agent-PROD.app.api.extraction_settings.rerun_analysis_prompt"
+    ],
+    "assumptions": [
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0
+  },
+  {
+    "id": "SYS-001",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Resume not found rule",
+    "statement": "When a request is made to retrieve a candidate's resume and the resume is not available, the system shall raise an HTTPException with a 404 and a message indicating that the resume is not found, so that the requester is informed of the error.",
+    "rationale": "This behavior is enforced by the business rule defined in the code, which raises an HTTPException when the candidate is not found.",
+    "persona": "interviewer",
+    "business_value": "be informed of the invalid request",
+    "acceptance_criteria": [
+      "The system shall return a 404 error when a non-existent candidate ID is requested.",
+      "The system shall return a message indicating the candidate was not found."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 225,
+        "line_end": 226,
+        "symbol": "resume-agent-PROD.app.api.rounds.get_candidate.rule@225"
+      }
+    ],
+    "graph_path": [
+      "GET /candidates/{candidate_id}",
+      "resume-agent-PROD.app.api.rounds.get_candidate"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Candidate not found rule",
+      "Resume not found rule",
+      "Candidate not found",
+      "Candidate Not Found"
+    ],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "SYS-002",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Audit candidate screening update",
+    "statement": "When a candidate's screening details are updated, the system shall log the update event, so that there is a record of changes made to the candidate's screening status.",
+    "rationale": "This behavior is enforced by the audit.write_event call within the patch_candidate function, which is triggered when changes are made to the candidate's details.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "The system shall log an event with the details of the update when the candidate's screening information is changed.",
+      "The log entry shall include the candidate ID and the fields that were updated."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 1064,
+        "line_end": 1068,
+        "symbol": "write_event"
+      }
+    ],
+    "graph_path": [
+      "PATCH /candidates/{candidate_id}",
+      "resume-agent-PROD.app.api.rounds.patch_candidate",
+      "audit.write_event"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72
+  },
+  {
+    "id": "SYS-003",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Validate Next Action Key",
+    "statement": "When an administrator attempts to update a candidate's next action, the system shall validate that the provided action key is among the valid keys, so that only recognized actions are accepted.",
+    "rationale": "This is enforced by the business rule that checks if the body.key is in VALID_NBA_KEYS before proceeding with the update.",
+    "persona": "administrator",
+    "business_value": "only valid actions are processed",
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 504,
+        "line_end": 505,
+        "symbol": "resume-agent-PROD.app.api.rounds.patch_next_action_override.rule@504"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds.patch_next_action_override.rule@504"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "SYS-004",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Require Action Text for Custom Key",
+    "statement": "When an administrator sets the next action key to 'custom', the system shall require that a text description is provided, so that the action can be clearly defined.",
+    "rationale": "This is enforced by the business rule that checks if body.key is 'custom' and body.text is not provided, raising an error if the condition is met.",
+    "persona": "administrator",
+    "business_value": "the custom action is properly defined",
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 506,
+        "line_end": 507,
+        "symbol": "resume-agent-PROD.app.api.rounds.patch_next_action_override.rule@506"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds.patch_next_action_override.rule@506"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "SYS-005",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Handle candidate not found error",
+    "statement": "When a request is made to process a candidate's information and the candidate ID does not correspond to an existing record, the system shall raise an HTTP 404 error, so that the requester is informed that the candidate was not found.",
+    "rationale": "This is supported by the business rule that raises an exception when the candidate ID is not found in the database.",
+    "persona": "the system",
+    "business_value": "the requester is informed of the error",
+    "acceptance_criteria": [
+      "The error message clearly states that the candidate was not found."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 225,
+        "line_end": 226,
+        "symbol": "resume-agent-PROD.app.api.rounds.get_candidate.rule@225"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 1056,
+        "line_end": 1057,
+        "symbol": "resume-agent-PROD.app.api.rounds.patch_candidate.rule@1056"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 1226,
+        "line_end": 1227,
+        "symbol": "resume-agent-PROD.app.api.rounds.patch_onboarding.rule@1226"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/candidate_slots.py",
+        "line_start": 260,
+        "line_end": 261,
+        "symbol": "resume-agent-PROD.app.api.candidate_slots.resolve_help_request.rule@260"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds.get_candidate.rule@225",
+      "PATCH /candidates/{candidate_id}",
+      "resume-agent-PROD.app.api.rounds.patch_candidate",
+      "resume-agent-PROD.app.api.rounds.patch_onboarding.rule@1226",
+      "resume-agent-PROD.app.api.rounds.get_candidate",
+      "resume-agent-PROD.app.api.candidate_slots.resolve_help_request.rule@260"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Handle missing candidate",
+      "Candidate existence validation",
+      "Candidate not found error handling",
+      "Candidate Not Found Rule",
+      "Candidate not found",
+      "Candidate not found rule"
+    ],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "SYS-007",
+    "type": "system",
+    "parent_id": "FR-MAIL-02",
+    "parent_relation": "enables",
+    "abstraction_basis": "internal_behaviour",
+    "title": "Seed sample data",
+    "statement": "When the command line for seeding is provided, the system shall invoke, so that sample data is populated in the local inbox.",
+    "rationale": "This is supported by the business rule that triggers the seeding of samples based on the command line argument.",
+    "persona": "operator",
+    "business_value": "sample data is populated in the local inbox",
+    "acceptance_criteria": [
+      "Exercising the command-line entry point produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/pipeline/mail/run_local.py",
+        "line_start": 151,
+        "line_end": 153,
+        "symbol": "resume-agent-PROD.app.pipeline.mail.run_local.main.rule@151"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.pipeline.mail.run_local.main",
+      "resume-agent-PROD.app.pipeline.mail.run_local.main.rule@151"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [
+      "This was filed as belonging under 'Run LangGraph Workflow Locally', but no requirement of that name was published. Which requirement does it belong to?"
+    ],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Seed Samples Rule",
+      "Seed samples rule"
+    ],
+    "model_confidence": 0.72
+  },
+  {
+    "id": "SYS-009",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Candidate note existence rule",
+    "statement": "When a request is made to delete a candidate's note, if the candidate has no note, the system shall raise an HTTPException with 404 and detail 'This candidate has no note to delete.', so that the user is informed that there is no note to delete.",
+    "rationale": "This rule is enforced in the delete_candidate_note function, which checks for the existence of the candidate before proceeding with the deletion.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the published interface, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 778,
+        "line_end": 779,
+        "symbol": "resume-agent-PROD.app.api.rounds.delete_candidate_note.rule@778"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 781,
+        "line_end": 782,
+        "symbol": "resume-agent-PROD.app.api.rounds.delete_candidate_note.rule@781"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds.delete_candidate_note.rule@778",
+      "resume-agent-PROD.app.api.rounds.delete_candidate_note.rule@781"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Candidate note existence rule"
+    ],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "SYS-010",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Rule for deallocating question bank",
+    "statement": "When the round_id is None, the system shall invoke the database command to deallocate the question bank, so that the allocation is removed without errors.",
+    "rationale": "This rule is enforced in the deallocate_question_bank method, which checks the condition of round_id before executing the deallocation command.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the published interface, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/repositories/pg_repo.py",
+        "line_start": 1362,
+        "line_end": 1373,
+        "symbol": "resume-agent-PROD.app.repositories.pg_repo.PostgresRepository.deallocate_question_bank.rule@1362"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.repositories.pg_repo.PostgresRepository.deallocate_question_bank.rule@1362"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72
+  },
+  {
+    "id": "SYS-041",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Check round status",
+    "statement": "When a user attempts to reset a candidate's round, the system shall check if the candidate is currently in a round, so that the operation can proceed only if the candidate is in a round.",
+    "rationale": "This rule is enforced in the `reset_round_from_help` function, which checks the candidate's help request status before proceeding with the reset.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/candidate_slots.py",
+        "line_start": 308,
+        "line_end": 309,
+        "symbol": "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@308"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/candidate_slots.py",
+        "line_start": 305,
+        "line_end": 306,
+        "symbol": "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@305"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/interviewer.py",
+        "line_start": 838,
+        "line_end": 839,
+        "symbol": "resume-agent-PROD.app.api.interviewer.create_interview_link.rule@838"
+      },
+      {
+        "file": "resume-agent-PROD/app/api/candidate_slots.py",
+        "line_start": 312,
+        "line_end": 313,
+        "symbol": "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@312"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@308",
+      "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@305",
+      "resume-agent-PROD.app.api.candidate_slots.reset_round_from_help.rule@312"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Check candidate existence",
+      "Check round status"
+    ],
+    "model_confidence": 0.85
+  },
+  {
+    "id": "RULE-001",
+    "type": "business_rule",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "domain_constraint",
+    "title": "Email draft required",
+    "statement": "When an email draft is required, the system shall ensure that the draft is created before sending, so that all candidates receive the necessary communication.",
+    "rationale": "This is enforced by the rule checking for draft existence in the _apply_nba_key method.",
+    "persona": "system",
+    "business_value": "all candidates receive necessary communication",
+    "acceptance_criteria": [
+      "The system shall not allow sending without a draft being created."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 423,
+        "line_end": 490,
+        "symbol": "resume-agent-PROD.app.api.rounds._apply_nba_key.rule@423"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds._apply_nba_key.rule@423"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72
+  },
+  {
+    "id": "RULE-002",
+    "type": "business_rule",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "domain_constraint",
+    "title": "Draft Rule",
+    "statement": "When a draft is created, the system shall set the subject and body of the draft, invoke the event, and configure the email sending, so that the draft is properly prepared for sending.",
+    "rationale": "This rule is inferred from the business logic that handles email drafts in the application process.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the published interface, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/api/rounds.py",
+        "line_start": 423,
+        "line_end": 490,
+        "symbol": "resume-agent-PROD.app.api.rounds._apply_nba_key.rule@423"
+      }
+    ],
+    "graph_path": [
+      "resume-agent-PROD.app.api.rounds._apply_nba_key.rule@423"
+    ],
+    "assumptions": [
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72
+  },
+  {
+    "id": "RULE-003",
+    "type": "business_rule",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "domain_constraint",
+    "title": "Enforce review kind",
+    "statement": "When a review request is added to, the system shall enforce the review kind, so that only valid review types are accepted.",
+    "rationale": "The review_queue.chk_review_kind constraint ensures that only valid review kinds are stored in the review_queue table.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "The review kind must match the predefined valid types."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/db/schema.sql",
+        "line_start": 94,
+        "line_end": 114,
+        "symbol": "review_queue"
+      }
+    ],
+    "graph_path": [
+      "review_queue.chk_review_kind"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.9
+  },
+  {
+    "id": "RULE-004",
+    "type": "business_rule",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "domain_constraint",
+    "title": "Enforce review state",
+    "statement": "When a review request is processed, the system shall enforce the review state, so that only valid states are recorded in.",
+    "rationale": "The review_queue.chk_review_state constraint ensures that only valid review states are stored in the review_queue table.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "The review state must match the predefined valid states."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "resume-agent-PROD/app/db/schema.sql",
+        "line_start": 94,
+        "line_end": 114,
+        "symbol": "review_queue"
+      }
+    ],
+    "graph_path": [
+      "review_queue.chk_review_state"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.9
+  }
+]

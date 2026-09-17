@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-skill-packs"
+version = "0.1.0"
+description = "Skill-pack-driven LangGraph agent that reverse-engineers codebases into evidence-grounded deliverables"
+requires-python = ">=3.11"
+dependencies = [
+  "langgraph>=0.2.60,<1",
+  "langgraph-checkpoint-sqlite>=2,<3",
+  "langchain-openai>=0.2.14,<1",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "pyyaml>=6,<7",
+  "streamlit>=1.46,<2",
+  # Structural extraction, for every language. The `sql` extra is not optional in practice: without
+  # it `.sql` files contribute nothing at all and a schema-bearing repository silently loses its
+  # tables. The PyPI name carries the double y; the command it installs is `graphify`.
+  "graphifyy[sql]>=0.9.52,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+agentic = "agentic.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agentic*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# The repo root is on the path so the metrics harness under `tests/harness` is importable.
+pythonpath = ["src", "."]
+# Every test in this suite is a function. Without this, pytest tries to collect the test-case
+# generation pack's own models -- `TestCase`, `TestSuite`, `TestScenario`, `TestDesignFragment` --
+# as test classes purely because of the `Test` prefix, and warns on each. Renaming domain models to
+# suit a collector would be the wrong fix: they are named for what they are.
+python_classes = []

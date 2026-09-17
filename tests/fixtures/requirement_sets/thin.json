@@ -1,0 +1,553 @@
+[
+  {
+    "id": "FR-UI-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Clear conversation",
+    "statement": "When the user clicks the '🗑️ Clear conversation' option, the system shall invoke the state update, so that the conversation history is cleared from the session context.",
+    "rationale": "This action is triggered by the option click, which directly invokes the state update as evidenced by the option's definition in the code.",
+    "persona": "the user",
+    "business_value": "the conversation history is cleared",
+    "acceptance_criteria": [
+      "The conversation history is removed from the session context after the option is clicked.",
+      "The user receives visual feedback indicating the conversation has been cleared.",
+      "The chat interface shall display a fresh state after the conversation is cleared."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/app.py",
+        "line_start": 203,
+        "line_end": 203,
+        "symbol": "multi_qa.app"
+      },
+      {
+        "file": "multi_qa/app.py",
+        "line_start": 203,
+        "line_end": 205,
+        "symbol": "multi_qa.app"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.app!button:🗑️ Clear conversation"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Clear conversation"
+    ],
+    "model_confidence": 0.95,
+    "area": "UI",
+    "area_name": "User Interface Actions",
+    "priority": "M"
+  },
+  {
+    "id": "FR-UIA-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Ask about documents or Northwind database",
+    "statement": "A user shall be able to ask questions about their documents or the Northwind database through the chat interface, so that they receive relevant answers based on the provided data.",
+    "rationale": "This functionality is evidenced by the UI action defined at multi_qa.app!chat_input:Ask about your documents or the Northwind database… which triggers responses based on user input.",
+    "persona": "user",
+    "business_value": "relevant information based on their query",
+    "acceptance_criteria": [
+      "The system shall return information relevant to the user's query about documents or the Northwind database.",
+      "The response shall be displayed in the chat interface after the user submits their question.",
+      "The system returns an answer relevant to the user's question about documents or the Northwind database.",
+      "The response time for the query shall not exceed 2 seconds under normal load conditions.",
+      "The system shall handle at least 100 concurrent queries without degradation in performance.",
+      "The user can input a question and receive a relevant answer.",
+      "The system handles both document and database queries appropriately."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/app.py",
+        "line_start": 274,
+        "line_end": 274,
+        "symbol": "multi_qa.app"
+      },
+      {
+        "file": "multi_qa/app.py",
+        "line_start": 15,
+        "line_end": 17,
+        "symbol": "multi_qa.app!chat_input:Ask about your documents or the Northwind database…"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.app!chat_input:Ask about your documents or the Northwind database…",
+      "multi_qa.app.chat_input",
+      "multi_qa.workflow.run"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Ask about documents or Northwind database"
+    ],
+    "model_confidence": 0.9,
+    "area": "UIA",
+    "area_name": "User Interaction Actions",
+    "priority": "M"
+  },
+  {
+    "id": "FR-UIA-02",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Index PDF",
+    "statement": "A user shall be able to index a PDF document by uploading it through a file upload interface, so that the document is processed and added to the system's index.",
+    "rationale": "This functionality is evidenced by the UI action defined at multi_qa.app!button:▶ Index PDF which triggers the indexing process for uploaded PDF files.",
+    "persona": "user",
+    "business_value": "the document is processed and added to the system's index",
+    "acceptance_criteria": [
+      "The system shall accept a PDF file uploaded by the user.",
+      "The system shall process the uploaded PDF and add it to the index, providing feedback on the indexing status."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/app.py",
+        "line_start": 140,
+        "line_end": 145,
+        "symbol": "multi_qa.app"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.app!button:▶ Index PDF"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.95,
+    "area": "UIA",
+    "area_name": "User Interaction Actions",
+    "priority": "M"
+  },
+  {
+    "id": "FR-WF-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Run the main workflow",
+    "statement": "When the script is executed as the main entry point, the system shall load configuration settings, set predefined test queries, and initiate the process, so that the application can handle user queries effectively.",
+    "rationale": "This is supported by the evidence in the `multi_qa.workflow` module, specifically the `__main__` function which sets up the environment and calls the workflow execution.",
+    "persona": null,
+    "business_value": "The application can process user queries and provide responses based on predefined tests and workflows.",
+    "acceptance_criteria": [
+      "The configuration settings are loaded successfully from the configured source.",
+      "The system sets the test queries correctly when executed as the main entry point."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/workflow.py",
+        "line_start": 84,
+        "line_end": 96,
+        "symbol": "multi_qa.workflow"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.workflow!__main__"
+    ],
+    "assumptions": [],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-001",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Ensure temporary file exists before indexing",
+    "statement": "When a temporary file path is generated for indexing, the system shall check that the path exists, so that the indexing process does not fail due to a missing file.",
+    "rationale": "The evidence shows that the indexing function enforces a rule to check the existence of the temporary file path before proceeding with indexing.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/indexer.py",
+        "line_start": 167,
+        "line_end": 168,
+        "symbol": "multi_qa.indexer.index_uploaded_file.rule@167"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.indexer.index_uploaded_file",
+      "multi_qa.indexer.index_uploaded_file.rule@167"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "PDF",
+    "area_name": "Index Biomedical PDF",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-002",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Check reindexing condition",
+    "statement": "When reindexing is requested, the system shall check if the storage directory exists, so that the reindexing process can proceed without errors.",
+    "rationale": "The evidence shows that the indexing function enforces a rule to check the existence of the storage directory before allowing reindexing.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/indexer.py",
+        "line_start": 146,
+        "line_end": 147,
+        "symbol": "multi_qa.indexer.build_index.rule@146"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.indexer.build_index",
+      "multi_qa.indexer.build_index.rule@146"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "PDF",
+    "area_name": "Index Biomedical PDF",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-003",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Check if the query is valid",
+    "statement": "When a user submits a query, the system shall validate the query format, so that only properly formatted queries are processed.",
+    "rationale": "This rule is enforced by the validation logic in the workflow that checks the query before executing it.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "The system shall return an error message if the query format is invalid.",
+      "The system shall log all invalid query attempts for review."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/sql_query.py",
+        "line_start": 51,
+        "line_end": 52,
+        "symbol": "multi_qa.sql_query.execute_northwind_query.rule@51"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.sql_query.execute_northwind_query",
+      "multi_qa.sql_query._validate"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0,
+    "area": "QA",
+    "area_name": "Question Answering",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-004",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Check if script is main module",
+    "statement": "When the script is executed as the main entry point, the system shall set predefined test queries, so that the application can run tests without user input.",
+    "rationale": "This is inferred from the business rule defined in the `multi_qa.workflow` module, which checks if `__name__` is equal to `__main__`.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the program's start-up path produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/workflow.py",
+        "line_start": 84,
+        "line_end": 96,
+        "symbol": "multi_qa.workflow.rule@84"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.workflow.rule@84"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-005",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Use checkpointer if available",
+    "statement": "When the checkpointer is available, the system shall compile the builder with the checkpointer, so that the workflow can persist state across sessions.",
+    "rationale": "This is inferred from the business rule defined in the `multi_qa.workflow.build_graph` module, which checks the `use_checkpointer` condition.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/workflow.py",
+        "line_start": 69,
+        "line_end": 71,
+        "symbol": "multi_qa.workflow.build_graph.rule@69"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.workflow.build_graph.rule@69"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-006",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Handle off-topic responses",
+    "statement": "When the input is determined to be off-topic, the system shall return a predefined response indicating the off-topic status, so that users are informed when their queries do not match the expected topics.",
+    "rationale": "This is inferred from the business rules defined in the `multi_qa.guardrail` module, which checks for off-topic conditions.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/guardrail.py",
+        "line_start": 48,
+        "line_end": 49,
+        "symbol": "multi_qa.guardrail.guardrail_node.rule@48"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.guardrail.guardrail_node.rule@48"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-007",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Handle SQL errors",
+    "statement": "When a SQL error occurs, the system shall append the error message to the response parts, so that users are informed of any issues with SQL queries.",
+    "rationale": "This is inferred from the business rules defined in the `multi_qa.aggregator` module, which checks for SQL error conditions.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/aggregator.py",
+        "line_start": 54,
+        "line_end": 56,
+        "symbol": "multi_qa.aggregator.aggregator_node.rule@54"
+      },
+      {
+        "file": "multi_qa/aggregator.py",
+        "line_start": 53,
+        "line_end": 56,
+        "symbol": "multi_qa.aggregator.aggregator_node.rule@53"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.aggregator.aggregator_node.rule@54",
+      "multi_qa.aggregator.aggregator_node.rule@53"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Handle RAG errors"
+    ],
+    "model_confidence": 0.72,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-008",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "Route based on SQL and RAG hits",
+    "statement": "When both SQL and RAG hits are greater than zero, the system shall set the route to 'both', so that the application can handle queries that require both SQL and RAG processing.",
+    "rationale": "This is inferred from the business rules defined in the `multi_qa.supervisor` module, which checks for SQL and RAG hit conditions.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [
+      "Exercising the on-screen control, which reaches this behaviour, produces the outcome this requirement describes."
+    ],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/supervisor.py",
+        "line_start": 74,
+        "line_end": 75,
+        "symbol": "multi_qa.supervisor.supervisor_node.rule@74"
+      },
+      {
+        "file": "multi_qa/supervisor.py",
+        "line_start": 73,
+        "line_end": 75,
+        "symbol": "multi_qa.supervisor.supervisor_node.rule@73"
+      },
+      {
+        "file": "multi_qa/supervisor.py",
+        "line_start": 72,
+        "line_end": 75,
+        "symbol": "multi_qa.supervisor.supervisor_node.rule@72"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.supervisor.supervisor_node.rule@74",
+      "multi_qa.supervisor.supervisor_node.rule@73",
+      "multi_qa.supervisor.supervisor_node.rule@72"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose.",
+      "The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."
+    ],
+    "open_questions": [],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [
+      "Route based on RAG hits",
+      "Route based on SQL hits"
+    ],
+    "model_confidence": 0.72,
+    "area": "WF",
+    "area_name": "Workflow Execution",
+    "priority": "M"
+  },
+  {
+    "id": "SYS-009",
+    "type": "system",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "internal_behaviour",
+    "title": "No relevant content found",
+    "statement": "When there are no chunks of relevant content, the system shall return an error message indicating that no relevant content was found, so that users are informed of the lack of information.",
+    "rationale": "The evidence shows that when the condition of no chunks is met, a specific error message is returned, which informs the user of the lack of relevant content.",
+    "persona": null,
+    "business_value": null,
+    "acceptance_criteria": [],
+    "confidence": 0.95,
+    "status": "candidate",
+    "evidence": [
+      {
+        "file": "multi_qa/rag_agent.py",
+        "line_start": 79,
+        "line_end": 82,
+        "symbol": "multi_qa.rag_agent.rag_agent_node.rule@79"
+      }
+    ],
+    "graph_path": [
+      "multi_qa.rag_agent.rag_agent_node.rule@79"
+    ],
+    "assumptions": [
+      "Recorded as internal behaviour rather than a business rule: the cited evidence is a condition in the code, with no declared constraint, named constant or explanatory prose establishing it as a rule the business chose."
+    ],
+    "open_questions": [
+      "What observable outcome would show this requirement has been met? Nothing in the cited evidence states one."
+    ],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 0.72,
+    "area": "RAG",
+    "area_name": "RAG Agent Functionality",
+    "priority": "M"
+  }
+]

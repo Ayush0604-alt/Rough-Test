@@ -1,0 +1,290 @@
+# Skill pack: generated requirements -> technology-independent test specifications.
+#
+# The second pack. Its input is the *published artifact* of the first — `requirements.json` — and
+# not the codebase that produced it, so it runs against a run's `artifacts/` directory:
+#
+#     agentic run testcase-generation runs/<run-id>/artifacts
+#
+# That works because `prepare_run` copies any directory into `source_root`; nothing under
+# `src/agentic/graph/`, `state.py`, `runtime.py`, or `app.py` changed to add this pack.
+#
+# Input qualification, signal analysis, bounded test design, assembly,
+# deduplication, coverage analysis, the quality gate with its bounded repair loop, and the rendered
+# deliverables. The pack is complete; framework-specific adapters are a later, separate pack.
+
+pack: testcase-generation
+version: 1
+description: >-
+  Turn a generated requirements artifact into traceable, risk-aware test specifications that are
+  independent of any test framework, UI, protocol, or language.
+
+# What a button offering this pack should say. Without it the UI can only offer the pack by its id.
+action_label: Generate test cases
+
+# Prepended to every llm step once design lands, so the derivation rules govern scenario design,
+# case authoring, and repair alike rather than being restated per step.
+master_skill: requirements-to-test-derivation
+
+# What this pack takes as input, declared here so the requirements pack needs to know nothing about
+# it. A UI or a script can read this to offer the next step once a requirements run finishes, and a
+# third pack declaring the same about *this* pack's output chains the same way for free.
+consumes_pack: codebase-requirements
+consumes_artifact: requirements.json
+
+steps:
+  # Phase 1a — the only step that reads `source_root`. Everything downstream consumes
+  # `requirement_set`, which is what keeps "add an optional input" a one-file change.
+  #
+  # `ingest_repository` from the requirements pack is deliberately not reused: it halts with
+  # NO_ANALYSABLE_SOURCE on a directory holding no parseable source, which is exactly what an
+  # artifacts folder is.
+  - id: ingest_requirements
+    skill: test-input-qualification
+    section: "Reading the artifact"
+    mode: deterministic
+    capability: ingest_requirement_set
+    produces: [requirement_set]
+    on_fail: halt
+
+  # Phase 1b — band every requirement before anything is designed. Deterministic on purpose:
+  # "should this be tested at all" must not sit inside a model call, because a model asked to
+  # design tests will always find something to say.
+  #
+  # This is also where the requirements pack's self-generated acceptance criteria are detected and
+  # discarded. They read as criteria and assert nothing; on a measured run they are a third of all
+  # criteria, and a test derived from one checks nothing.
+  - id: qualify
+    skill: test-input-qualification
+    section: "The bands"
+    mode: deterministic
+    capability: qualify_requirements
+    consumes: [requirement_set]
+    produces: [qualified_set, qualification_report]
+    on_fail: halt
+
+  # Phase 1c — one blocking question: is there anything here worth generating tests from? Every
+  # other finding is a warning, because a thin input should still produce an honest thin suite
+  # rather than nothing.
+  - id: gate_input
+    skill: test-input-qualification
+    mode: gate
+    capability: validate_requirement_input
+    consumes: [requirement_set, qualified_set]
+    produces: [input_gate]
+    on_fail: halt
+
+  # Phase 2a — the anti-explosion mechanism, and the reason a large requirements set does not
+  # become an unusable suite. Decides which dimensions each requirement activates, how much a
+  # failure there would matter, and how many cases it is therefore worth. All of it deterministic
+  # and all of it before the first model call, so the designer works inside a plan it did not make.
+  #
+  # This is also where internal behaviour is routed. Half a measured requirement set describes
+  # behaviour no outside actor observes; generating a stakeholder-facing case for each produced 485
+  # projected cases against 280 with the routing applied.
+  - id: analyse_signals
+    skill: risk-based-test-design
+    section: "Spending the budget"
+    mode: deterministic
+    capability: analyse_test_signals
+    consumes: [qualified_set]
+    produces: [test_signals]
+    on_fail: halt
+
+  # Phase 2b — cost control. One bounded packet per model call, grouped by area so the requirements
+  # in one call are about the same part of the product and can share preconditions.
+  - id: plan_batches
+    skill: risk-based-test-design
+    mode: deterministic
+    capability: build_test_batches
+    consumes: [qualified_set, test_signals]
+    produces: [test_batches]
+    on_fail: halt
+
+  # Phase 2c — one model call per batch, in parallel. The only step in the pack that calls a model.
+  # A worker sees its own packet and nothing else: not the requirements document, not the rest of
+  # the set, and never any source code.
+  - id: design_tests
+    skill: risk-based-test-design
+    mode: llm
+    fan_out: test_batches
+    output_schema: TestDesignFragment
+    consumes: [test_batches]
+    produces: [fragments]
+    instructions: |-
+      You are given one batch of qualified requirements from one part of a product, each with the
+      test dimensions it activates, the acceptance criteria that survived qualification, and a case
+      budget.
+
+      **Everything in the packet has already been decided.** Which requirements are testable, which
+      dimensions each activates, and how many cases each is worth were computed from what the
+      requirements actually say. A case claiming a dimension not listed for its requirement is
+      dropped by the step after you, so writing one costs the batch a case and gains nothing.
+
+      Design scenarios that group cases by **situation** — the state of the world the cases run
+      under — rather than one scenario per requirement or one per case. Cases in a scenario share
+      its preconditions instead of each restating them.
+
+      For every case, answer this before writing it: **what would have to be true of an
+      implementation for this to fail?** If the answer is "nothing", you are about to write a
+      sentence about the requirement rather than a test. Write a different case, or record in
+      `notes` that this requirement does not support one.
+
+      Copy `requirement_id` exactly from the packet. Where a listed acceptance criterion is what
+      you are checking, set `covers_criterion` to its zero-based index — that is how coverage is
+      counted, and a case that checks a criterion without naming it reads as uncovered.
+
+      `objective` is the risk the case retires, not what the case does. `expected_results` must be
+      observable and falsifiable by someone who has never seen the code — never "works correctly",
+      "behaves appropriately", "returns successfully", or "no errors occur", each of which passes
+      against a broken implementation.
+
+      **Name no framework, tool, protocol, client, or language**, in any field. Say "submit a
+      removal request for that identifier", never "send a DELETE" or "call the endpoint". A later
+      adapter decides the mechanism; deciding it here means the specification can only ever become
+      one kind of test.
+
+      Never invent a specific error message, status value, or numeric limit the requirement does
+      not fix. Where you supplied something the requirement leaves open, set `derivation` to
+      `assumed` and say in `assumptions` what you supplied.
+
+      The budget is a ceiling, not a target. Returning fewer cases than it allows, and saying why
+      in `notes`, is a correct outcome. Where several activated dimensions describe one refusal,
+      write one case rather than three that pass and fail together.
+
+  # Phase 2d — deterministic assembly. Stamps identifiers, computes every derived field, resolves
+  # each case's coverage link against the criteria its designer was actually shown, and drops what
+  # cannot be traced. A requirement that was planned for and came back with nothing is recorded as
+  # uncovered here, because a worker that simply says nothing about one is otherwise invisible.
+  - id: assemble_tests
+    skill: risk-based-test-design
+    mode: deterministic
+    capability: assemble_test_specs
+    consumes: [qualified_set, test_signals, fragments]
+    produces: [test_suite]
+    on_fail: halt
+
+  # Phase 3a — fold cases that check the same behaviour twice. Before the gate on purpose: a
+  # duplicate is an arithmetic fact about two cases rather than a judgement, and asking a model
+  # which to keep invites it to keep both. Nothing is deleted — a folded id is recorded on the case
+  # that absorbed it, so a merge is visible rather than looking like a case that went missing.
+  - id: dedupe
+    skill: test-coverage-and-duplication-gates
+    section: "Deduplication"
+    mode: deterministic
+    capability: deduplicate_test_cases
+    consumes: [test_suite]
+    produces: [test_suite]
+    on_fail: warn_and_continue
+
+  # Phase 3b — account for every requirement, covered or not, and every acceptance criterion,
+  # checked or not. The useful half is the second half: which requirement has only a happy-path
+  # test, and which criterion nothing verifies.
+  - id: analyse_coverage
+    skill: test-coverage-and-duplication-gates
+    mode: deterministic
+    capability: analyse_test_coverage
+    consumes: [qualified_set, test_signals, test_suite]
+    produces: [coverage]
+    on_fail: warn_and_continue
+
+  # Phase 3c — the quality gate. Errors are exactly the findings a repair pass could act on, given
+  # it sees only the rejected cases and the issue list; coverage gaps are warnings because no
+  # rewording of an existing case can create a missing one.
+  - id: gate_tests
+    skill: test-coverage-and-duplication-gates
+    section: "The gate"
+    mode: gate
+    capability: validate_test_specs
+    consumes: [qualified_set, test_suite, coverage]
+    produces: [test_gate]
+    next: final_check           # the pass path
+    on_fail: repair
+    repair_step: repair_tests
+    max_repairs: 4
+    exhausted_step: prune_tests
+
+  # Bounded corrective pass. Sees only the cases the gate rejected and what is wrong with each --
+  # never the whole suite, which is what keeps the reply small however large the suite grows.
+  - id: repair_tests
+    skill: test-coverage-and-duplication-gates
+    mode: llm
+    output_schema: RepairedTestCases
+    consumes: [test_suite, test_gate]
+    produces: [test_repairs]
+    next: apply_test_repairs
+    instructions: >-
+      The quality gate rejected part of the test suite. `test_suite.cases_to_fix` holds those cases
+      and only those, each carrying the problems found with it. Every other case passed and is kept
+      exactly as it is by the step after you, so return **only** the cases you fixed, each with its
+      original `id`.
+
+      Do not restate the suite. Returning cases that were not rejected does not preserve them --
+      they are preserved anyway -- and any you do return are ignored.
+
+      A vague expected result means the case is worth running and is described badly: say what is
+      observably true after the steps, so that a broken implementation would fail it. "Works
+      correctly", "no errors occur", and "behaves as expected" all pass against a broken system.
+
+      A case rejected for restating its requirement needs the same treatment from the other end.
+      The requirement says what must be true; your expected results say how somebody would find
+      out. Keep the behaviour under test and change what you assert about it.
+
+      A missing precondition, input, or assumption is **supplied, not deleted**. What is missing is
+      a sentence, and the behaviour being checked is still worth checking.
+
+      A framework leak is a wording problem. Remove the tool, protocol verb, or language and
+      describe what the actor does instead -- "submit a removal request for that identifier", never
+      "send a DELETE".
+
+      Leave every field other than the rejected ones alone, and never change which requirement a
+      case traces to: its coverage was measured against that link.
+
+      Delete a case only where no wording could make it check anything, and list its id in
+      `deleted`. A deleted case is recorded as an uncovered gap, which is honest; inventing an
+      assertion to rescue one is not.
+
+  # Put the repaired cases back and carry everything else across untouched, then re-check from
+  # deduplication onward -- a repaired case may now duplicate one it did not before, and coverage
+  # was measured against the pre-repair suite.
+  - id: apply_test_repairs
+    skill: test-coverage-and-duplication-gates
+    mode: deterministic
+    capability: apply_test_repairs
+    consumes: [test_suite, test_repairs, test_gate]
+    produces: [test_suite]
+    next: dedupe
+    on_fail: halt
+
+  # Reached only when the repair budget is spent: drop what could not be made to check anything, so
+  # a thinner honest suite can still be published. Deterministic -- no model gets to argue for
+  # keeping a case the gate rejected.
+  - id: prune_tests
+    skill: test-coverage-and-duplication-gates
+    mode: deterministic
+    capability: prune_test_cases
+    consumes: [test_suite, test_gate]
+    produces: [test_suite]
+    next: final_check
+
+  # The last look, and the only one that can see the finished suite. Every stage before this
+  # changes it, so a duplicate id, a case orphaned from its scenario, or a requirement that lost
+  # its last case to pruning are invisible until nothing is going to move again.
+  - id: final_check
+    skill: test-coverage-and-duplication-gates
+    section: "The final check"
+    mode: deterministic
+    capability: validate_test_suite
+    consumes: [test_suite, coverage]
+    produces: [test_suite, test_findings]
+    on_fail: warn_and_continue
+
+  # Phase 4 — Deliverables. Always runs, even when little or nothing qualified, so a thin suite is
+  # explained requirement by requirement rather than published as a bare number. Half the value is
+  # in the last two documents: what will not be tested, and what has to be answered first.
+  - id: render_tests
+    skill: traceable-test-deliverables
+    mode: deterministic
+    capability: render_test_deliverables
+    consumes: [qualified_set, test_suite, coverage, test_gate]
+    produces: [deliverables]
+    on_fail: warn_and_continue

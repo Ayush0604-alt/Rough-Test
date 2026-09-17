@@ -1,0 +1,98 @@
+[
+  {
+    "id": "FR-OK-01",
+    "type": "functional",
+    "title": "Remove a stored item",
+    "statement": "An operator shall be able to remove a stored item by supplying its identifier, so that the item is no longer available.",
+    "acceptance_criteria": ["The item is removed when a valid identifier is supplied."],
+    "status": "candidate",
+    "confidence": 0.9,
+    "area": "OPS",
+    "area_name": "Operations",
+    "priority": "M",
+    "evidence": [{"file": "a.py", "line_start": 1, "line_end": 2, "symbol": "remove"}],
+    "graph_path": ["DELETE /items/{id}", "a.remove"],
+    "assumptions": [],
+    "open_questions": [],
+    "superseded": [],
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "rationale": "",
+    "persona": "operator",
+    "business_value": null,
+    "generator": "test",
+    "model_confidence": 1.0,
+    "an_unknown_future_key": "must be preserved, not rejected"
+  },
+
+  { "id": "", "statement": "This entry has no identifier, so nothing can address it." },
+
+  { "id": "FR-NOSTMT-01", "type": "functional", "statement": "   " },
+
+  {
+    "id": "FR-TYPES-01",
+    "type": "functional",
+    "statement": "A user shall be able to submit a record for review, so that a reviewer can act on it.",
+    "acceptance_criteria": "not a list, a bare string",
+    "evidence": {"file": "a.py", "line_start": 3, "line_end": 4},
+    "graph_path": null,
+    "assumptions": null,
+    "confidence": "high",
+    "priority": 7,
+    "area": 12345,
+    "superseded": "also not a list"
+  },
+
+  {
+    "id": "FR-DUPE-01",
+    "type": "functional",
+    "statement": "An operator shall be able to remove a stored item by supplying its identifier, so that the item is no longer available.",
+    "acceptance_criteria": ["The item is removed when a valid identifier is supplied."],
+    "status": "candidate"
+  },
+
+  {
+    "id": "FR-OK-01",
+    "type": "functional",
+    "statement": "A colliding identifier reusing FR-OK-01, which would make every downstream link ambiguous.",
+    "status": "candidate"
+  },
+
+  "a bare string where an object belongs",
+
+  null,
+
+  {
+    "id": "OBS-001",
+    "type": "observation",
+    "statement": "The system caches a computed value between calls.",
+    "status": "candidate"
+  },
+
+  {
+    "id": "FR-REJ-01",
+    "type": "functional",
+    "statement": "A user shall be able to change a password securely, so that the account stays protected.",
+    "status": "rejected",
+    "acceptance_criteria": []
+  },
+
+  {
+    "id": "FR-BOIL-01",
+    "type": "functional",
+    "statement": "A user shall be able to view a summary of recent activity, so that they can see the current position.",
+    "acceptance_criteria": ["Exercising the published interface produces the outcome this requirement describes."],
+    "assumptions": ["The acceptance criterion below was derived from the cited evidence rather than stated by the analysis, and should be confirmed against the product's intent."],
+    "status": "candidate"
+  },
+
+  {
+    "id": "SYS-BLOCK-01",
+    "type": "system",
+    "statement": "The system shall retain an internal counter across invocations.",
+    "acceptance_criteria": [],
+    "open_questions": ["What observable outcome would show this requirement has been met? Nothing in the cited evidence states one."],
+    "status": "candidate"
+  }
+]

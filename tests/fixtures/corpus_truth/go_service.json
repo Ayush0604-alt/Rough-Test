@@ -1,0 +1,46 @@
+{
+  "name": "go_service",
+  "paradigm": "http_service",
+  "primary_language": "Go",
+  "languages": [
+    "Go",
+    "Markdown"
+  ],
+  "notes": "No Python at all. Today ingestion halts and the run emits nothing; this fixture is the new-stack gate for WP8 and the baseline is zero by construction.",
+  "entry_points": [
+    {
+      "class": "ENDPOINT",
+      "id": "GET /items",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "GET /item",
+      "effect": "read"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "POST /reserve",
+      "effect": "mutate"
+    },
+    {
+      "class": "ENDPOINT",
+      "id": "POST /release",
+      "effect": "mutate"
+    }
+  ],
+  "domain_policy_artifacts": [
+    {
+      "file": "main.go",
+      "kind": "constant",
+      "policy": "MaxReservation caps a single reservation"
+    },
+    {
+      "file": "README.md",
+      "kind": "prose",
+      "policy": "a reservation may not exceed the per-order limit"
+    }
+  ],
+  "selection_cap_for_measurement": 4,
+  "fixture_dir": "tests/fixtures/corpus/go_service"
+}

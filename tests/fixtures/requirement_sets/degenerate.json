@@ -1,0 +1,44 @@
+[
+  {
+    "id": "FR-QA-01",
+    "type": "functional",
+    "parent_id": null,
+    "parent_relation": null,
+    "abstraction_basis": "external_capability",
+    "title": "Process Biomedical Queries",
+    "statement": "A user shall be able to submit a query about biomedical documents, so that the system retrieves relevant information from the provided PDF documents.",
+    "rationale": "This is supported by the logic in the `rag_agent` module, which processes queries related to biomedical content.",
+    "persona": "user",
+    "business_value": "retrieve information from biomedical documents",
+    "acceptance_criteria": [
+      "The system returns relevant excerpts from the biomedical documents for valid queries.",
+      "The system indicates when no relevant information is found."
+    ],
+    "confidence": 0.3,
+    "status": "rejected",
+    "evidence": [
+      {
+        "file": "rag_agent.py",
+        "line_start": 33,
+        "line_end": 49,
+        "symbol": "rag_agent._build_context.rule@33"
+      }
+    ],
+    "graph_path": [
+      "workflow.__main__",
+      "rag_agent._build_context"
+    ],
+    "assumptions": [
+      "Confidence is low because only these hold: the cited code does not support the statement."
+    ],
+    "open_questions": [
+      "The cited code does not appear to support this statement (The evidence does not show that the application merges the loaded environment variables with the existing configuration). Should it be reworded, re-evidenced, or removed?"
+    ],
+    "generator": "llm:azure/gpt-4o-mini",
+    "superseded": [],
+    "model_confidence": 1.0,
+    "area": "QA",
+    "area_name": "Query Assistance",
+    "priority": "M"
+  }
+]
