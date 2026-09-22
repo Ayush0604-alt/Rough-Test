@@ -290,11 +290,17 @@ def test_happy_path_produces_every_deliverable(e2e) -> None:
     # `classify_boundaries` is a fan-out step now, like `synthesize`, so it never appends its own
     # id to `completed_steps` — each parallel worker runs the same node function, and none of them
     # is "the" completion. `collect_boundary_assignments` is the reduce step that follows it.
-    assert completed[:8] == [
-        "ingest", "graphify_extract", "adapt_graph", "propose_boundaries",
-        "collect_boundary_assignments", "discover_entry_points", "gate_graph", "plan_clusters",
+    # `analyse_module` is a fan-out step too, so like `classify_boundaries` and `synthesize` it
+    # never appends its own id — `collect_module_analyses` is its reduce step.
+    assert completed[:11] == [
+        "ingest", "graphify_extract", "adapt_graph", "extract_declarations",
+        "propose_boundaries", "collect_boundary_assignments", "discover_entry_points",
+        "gate_graph", "partition_modules", "plan_clusters", "collect_module_analyses",
     ]
-    for step in ("digest_areas", "elevate", "assemble", "gate_requirements", "render"):
+    for step in (
+        "digest_areas", "elevate", "assemble", "gate_requirements",
+        "report_family_coverage", "render",
+    ):
         assert step in completed, step
     # A passing gate must go straight to render, never through the repair step below it.
     assert "repair" not in completed

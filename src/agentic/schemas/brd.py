@@ -1055,3 +1055,105 @@ class ProductBRD(BaseModel):
 
     def is_empty(self) -> bool:
         return not any(self.every_section().values())
+
+
+class ModuleAnalysis(BaseModel):
+    """What one module-analysis worker returns for one part of the product.
+
+    The altitude between `BRDFragment` (one interaction boundary) and `TopTier` (the whole
+    product). It exists because a whole class of requirement is true of a *part* and invisible from
+    inside any one of that part's boundaries: that every write path goes through one repository
+    layer, that nothing here accepts a request without a tenant id, that the retry bound is three
+    across all six handlers. Those are system requirements, cross-cutting rules and quality
+    properties — three of the families no run had ever populated, because no step had ever looked
+    at a part of the product as a whole.
+
+    Deliberately **not** a place to restate a boundary's work. The fan-out workers below have
+    already written every externally observable capability in full, grounded and checked; repeating
+    one here inflates the count and gives a reviewer nothing. Anything this worker returns must be
+    a statement no single boundary could support — and `generalises` names the boundary-level
+    titles it sits above, so assembly can collapse a parent that turns out to add nothing.
+    """
+
+    module_code: str = Field(
+        description=(
+            "Copy the `module_code` you were given, exactly. It is the identifier every "
+            "requirement in this module is filed under, and it is assigned from the partition — "
+            "never invent or change one."
+        )
+    )
+    module_name: str = Field(
+        default="",
+        description=(
+            "The heading this module is published under, in the product's own business words. "
+            "Three or four words, naming what this part of the product is for — not the directory "
+            "it lives in and not the framework it uses."
+        ),
+    )
+    module_purpose: str = Field(
+        default="",
+        description=(
+            "One or two sentences on what this part of the product exists to let someone do, and "
+            "for whom. Written from the boundaries and declared policy you were shown."
+        ),
+    )
+    module_capabilities: list[BRDItem] = Field(
+        default_factory=list,
+        description=(
+            "Capabilities that are true of this module as a whole and that no single boundary "
+            "below it could establish. Basis `external_capability` or `internal_behaviour`. If a "
+            "statement would be just as true written from one endpoint, it belongs there and not "
+            "here — return nothing rather than a generalisation of one boundary's work."
+        ),
+    )
+    cross_cutting_rules: list[BRDItem] = Field(
+        default_factory=list,
+        description=(
+            "A guard, refusal or accepted-input restriction that holds across several of this "
+            "module's boundaries — the kind of policy that is invisible from inside any one of "
+            "them. Give the triggering condition, the required behaviour and the observable "
+            "consequence. Basis `domain_constraint`. Cite every boundary it holds for."
+        ),
+    )
+    quality_properties: list[BRDItem] = Field(
+        default_factory=list,
+        description=(
+            "A measurable property this module fixes: a timeout, a size cap, a retry bound, a "
+            "concurrency guard, an authorisation gate, a masked secret. Basis `quality_property`. "
+            "Take the value from `declared_policy` and quote it. Only where the evidence fixes "
+            "something checkable — never a general aspiration."
+        ),
+    )
+    integration_points: list[BRDItem] = Field(
+        default_factory=list,
+        description=(
+            "One per external system this module depends on: what it is used for, and what "
+            "happens when it is unavailable. Read from `depends_on`, which names the systems this "
+            "module references but never defines. One per system, never one per call."
+        ),
+    )
+    data_invariants: list[BRDItem] = Field(
+        default_factory=list,
+        description=(
+            "An invariant the stored data must hold, taken from `declared_policy`: an enumerated "
+            "vocabulary a constraint declares, a uniqueness guarantee, an identifier scheme, a "
+            "retention rule. A schema constraint states policy more strongly than any code, "
+            "because the database enforces it whatever the code does. Quote the declared values."
+        ),
+    )
+    generalises: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact titles of the boundary-level requirements this analysis sits above. This is "
+            "what lets assembly collapse a module statement that turns out to say no more than "
+            "the requirements beneath it."
+        ),
+    )
+    unevidenced: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Families you were asked for and could not write, with the reason — 'no configuration "
+            "declared', 'no schema in this module'. An honest gap is reported and read by the "
+            "completeness report; a guessed entry is rejected."
+        ),
+    )

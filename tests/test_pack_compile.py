@@ -15,16 +15,26 @@ def test_pack_loads_and_resolves_every_reference(manifest: PackManifest) -> None
     assert manifest.pack == "codebase-requirements"
     assert [step.id for step in manifest.steps] == [
         "ingest", "graphify_extract", "adapt_graph",
+        # Declared policy — config, schema and dependency manifests, which a call graph cannot
+        # carry and which six downstream consumers were already built to read.
+        "extract_declarations",
         "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
         "discover_entry_points",
-        "gate_graph", "plan_clusters",
-        "synthesize", "cluster_candidates", "digest_areas", "elevate", "assemble",
+        "gate_graph",
+        # The altitude between one boundary and the whole product.
+        "partition_modules", "plan_clusters",
+        "synthesize", "analyse_module", "collect_module_analyses",
+        "cluster_candidates", "digest_areas", "elevate", "assemble",
         # Consolidation and resolution: the stage between synthesis and validation that decides
         # what the candidates add up to.
         "consolidate", "check_correspondence", "score_confidence", "strip_implementation",
         "resolve", "derive_criteria",
         "prepare_claims",
-        "gate_requirements", "repair", "apply_repairs", "quarantine", "final_check", "render",
+        "gate_requirements", "repair", "apply_repairs", "quarantine", "final_check",
+        # Completeness, which nothing measured before: whether a family is empty because the
+        # product declares nothing or because this pipeline cannot read what it declares.
+        "report_family_coverage",
+        "render",
     ]
 
 

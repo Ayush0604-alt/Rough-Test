@@ -36,6 +36,37 @@ class Settings(BaseSettings):
     docstring_max_chars: int = 600
     """Cap for a FUNCTION/METHOD docstring. CLASS and FILE get twice this."""
 
+    # Read declared policy out of config, schema and dependency files and add it to the graph as
+    # CONFIG_KEY / DATA_ENTITY / DATA_FIELD / DATA_INDEX / DOMAIN_POLICY / EXTERNAL_SERVICE nodes.
+    #
+    # Those six kinds were consumed by `compact_entity`, `render.py`, `gates.py` and
+    # `declaration_groups` and emitted by nothing: orphaned when the Python-only AST extractors
+    # were swapped for Graphify, which buys 36 languages and carries no declarations. Switching
+    # this off reproduces the previous graph exactly. Deterministic, no model call.
+    declaration_extraction: bool = True
+
+    # The altitude between one interaction boundary and the whole product. One model call per
+    # module, over a partition derived from workflow overlap between boundaries.
+    #
+    # Off reproduces the previous two-tier pipeline: boundary clusters and one top-tier call, with
+    # `digest_areas` grouping titles in between and nothing reasoning about a part of the product
+    # as a whole.
+    module_analysis: bool = True
+    min_modules: int = 6
+    """Floor on the agglomeration, so a codebase whose boundaries share a bootstrap path does not
+    collapse into one module."""
+    max_modules: int = 20
+    """Ceiling on module-analysis calls. Modules past it keep their boundaries and their findings
+    and share the residual module's analysis, so nothing stops being described."""
+    module_packet_chars: int = 30_000
+    """A module packet is smaller than a boundary packet on purpose: it carries the shape of a
+    part, not every statement inside it, which the boundary clusters already carry in full."""
+
+    # Give every meaningful graph node a packet, instead of only those a boundary walk reaches.
+    # Measured on the reference run: boundary clustering reached 12.5% of the graph while packets
+    # ran at 20% of their character budget, so complete coverage costs fewer calls, not more.
+    residual_clusters: bool = True
+
     # Azure OpenAI
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = Field(default="", repr=False)

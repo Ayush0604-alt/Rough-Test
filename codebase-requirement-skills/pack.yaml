@@ -52,6 +52,23 @@ steps:
     produces: [graph]
     on_fail: halt
 
+  # Phase 1b(ii) — Declared policy. Graphify answers "who calls whom", which is the right question
+  # for behaviour and the wrong one for policy: a schema, a settings file and a dependency manifest
+  # state what the product must do and nothing calls any of them. Six node kinds
+  # (CONFIG_KEY, DATA_ENTITY, DATA_FIELD, DATA_INDEX, DOMAIN_POLICY, EXTERNAL_SERVICE) were already
+  # consumed by `compact_entity`, `render.py`, `gates.py` and `declaration_groups` and emitted by
+  # nothing — orphaned when the Python-only AST extractors were replaced. This is that producer.
+  #
+  # Deterministic and before boundary proposal, so declarations are present when candidates are
+  # ranked and when `declaration_groups` looks for policy no call path reaches.
+  - id: extract_declarations
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: extract_declarations
+    consumes: [inventory, graph]
+    produces: [graph]
+    on_fail: warn_and_continue
+
   # Phase 1c — Propose interaction-boundary candidates from graph shape. Nothing in Graphify's
   # output marks a route or a command, so the signal is structural: a handler is invoked by a
   # framework, never by the code beside it, so nothing in this repository calls it.
@@ -119,6 +136,25 @@ steps:
     produces: [graph_gate]
     on_fail: halt
 
+  # Phase 2b — Product modules: the altitude between one workflow and the whole product.
+  #
+  # Boundaries are agglomerated by how much of the code they reach is shared, because an
+  # interaction boundary is the product's own unit of offered function, so boundaries running the
+  # same code are offering parts of the same feature. Two alternatives were measured and rejected
+  # on a real 381-file run: directories gave a *layer* split (app/api 1,081 nodes, app/services
+  # 1,299), and community detection collapsed api+services+repositories into one 1,244-node
+  # hairball, because a layered application is densely interconnected by construction.
+  #
+  # Its `boundary_modules` output is what lets `plan_clusters` hand each cluster its area code
+  # instead of asking eighty-four isolated workers to agree on one they cannot see.
+  - id: partition_modules
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: partition_modules
+    consumes: [graph]
+    produces: [modules, boundary_modules]
+    on_fail: warn_and_continue
+
   # Partition the graph around interaction boundaries. This is the cost-control step: it decides
   # what slice of evidence each model call sees, so the model never reads raw source.
   - id: plan_clusters
@@ -126,7 +162,7 @@ steps:
     section: "Interaction boundaries"
     mode: deterministic
     capability: build_boundary_clusters
-    consumes: [graph]
+    consumes: [graph, boundary_modules]
     produces: [clusters]
     on_fail: halt
 
@@ -142,6 +178,14 @@ steps:
       You are looking at one interaction-boundary cluster from a larger codebase. Describe only
       what this cluster's evidence supports. Do not speculate about the rest of the system, and do
       not write a product purpose — a later step establishes that from every cluster together.
+
+      **A `residual` cluster has no boundary above it.** It is implemented code that no route,
+      command, job or control reaches — a background subsystem, a migration, an admin script, or
+      dead code. "Work outward from the boundary" does not apply, and you must not invent one: a
+      claim that cannot trace to a real boundary is rejected by Gate 2 whatever you write. Describe
+      what this code is *for* under `observations`, with the declared policy it carries, and return
+      a functional requirement only where the evidence shows an actor outside the system genuinely
+      reaching it. Most residual clusters yield observations and nothing else, which is correct.
 
       Work outward from the boundary. Its label is the product's own wording for what it offers
       someone; `triggered_outcomes` and the workflow reachable from it are what that offer does.
@@ -270,16 +314,30 @@ steps:
       Cite each requirement at the span of the definition it rests on — the full line range the
       packet gives for that node — and put that node's exact qualified name in `symbol`.
 
-      Set `requirement_type` on every item you return — `functional` or `business_rule`, the two
-      tiers available to you here. That field is what gets published, so an item filed in one list
-      but typed another is published as the type you gave it.
+      **Set `abstraction_basis` on every item and leave `requirement_type` alone.** The basis is
+      the answer to the question you were asked first, and `BASIS_TYPES` maps every basis onto
+      exactly one published tier, so consolidation derives the type from it deterministically. An
+      item you file under `data_requirements` with basis `domain_constraint` is published as the
+      rule its grounds make it — you cannot file a finding in one family and have it published as
+      another, and you do not need to try.
 
-      **Name the areas.** Set `area_code` to a 2-4 letter code for the part of the product most of
-      this cluster belongs to, and `area_name` to its heading in business words. Choose the code
-      from what the code *does*, not from where it lives, and invent it from this product's own
-      subject matter — there is no standard list to pick from. Choose it as though other clusters
-      will pick it too: clusters sharing a code have their requirements published together under
-      one heading, which is how a reader finds everything about one part of the product.
+      This instruction previously read "`functional` or `business_rule`, the two tiers available to
+      you here", while the same step asked for seven further families and stated that
+      `requirement_type` "is what gets published". A worker obeying it literally could not return a
+      data, integration, quality or reporting finding at all — and across twenty stored runs, none
+      ever did.
+
+      **Name the areas.** When the work item carries a `module_code`, that is your `area_code` —
+      copy it exactly and do not invent one. It is assigned from the module partition, which
+      grouped this cluster with the other boundaries running the same code, and it is the only
+      version of "clusters covering the same part of the product must use the same code" a worker
+      can actually obey: you cannot see another worker's reply, so agreement has to be handed down
+      rather than asked for. Left to invent one, eighty-four isolated workers on the reference run
+      produced four separate areas for batches and fourteen areas holding a single requirement.
+
+      Set `area_name` to its heading in business words. Where no `module_code` is given, choose a
+      2-4 letter code yourself from what the code *does*, not from where it lives, inventing it
+      from this product's own subject matter — there is no standard list to pick from.
 
       An area heading names **something the product does for someone**. It must survive the two
       tests that catch a heading that is really a location: could a person who has never seen the
@@ -335,6 +393,85 @@ steps:
   # read as a behaviour inventory. Every comparison before it required two candidates to *share
   # code* — the same citation span, or a node in common on the call path — before their wording was
   # even looked at. Fan-out workers analyse one boundary each, so two workers describing the same
+  # Phase 3a(ii) — one model call per product module. The altitude the pipeline was missing.
+  #
+  # `synthesize` sees one boundary (a median of nine graph nodes) and `elevate` sees a list of
+  # finding titles for the whole repository. Between them sat `digest_areas`, which is
+  # deterministic — so nothing anywhere reasoned about a *part* of the product as a whole. That is
+  # why a whole class of requirement was unwritable: "every write path here goes through one
+  # repository layer", "nothing in this part accepts a request without a tenant id", "the retry
+  # bound is three across all six handlers". Each is true of a module and invisible from inside any
+  # one of its boundaries, and they are system requirements, cross-cutting rules and quality
+  # properties — three of the families no stored run had ever populated.
+  - id: analyse_module
+    skill: evidence-grounded-requirement-synthesis
+    section: "Module analysis"
+    mode: llm
+    fan_out: modules
+    output_schema: ModuleAnalysis
+    produces: [module_fragments]     # a shared state channel, not a file: many workers write at once
+    instructions: |-
+      You are looking at one **module** — one part of the product, above the level of any single
+      interaction boundary. Copy `module_code` exactly as given; it is assigned from the partition
+      and is what every requirement in this module is filed under.
+
+      Name the module in the product's own business words (`module_name`), and say in one or two
+      sentences what it exists to let someone do (`module_purpose`). Never name a directory, a
+      framework, or a file — a reader of the finished document sees this heading and should
+      recognise a part of their product.
+
+      **Write only what is true of this module as a whole.** Every externally observable
+      capability of every boundary below you has already been written in full, grounded and
+      checked, by the workers that saw those boundaries individually. Restating one here inflates
+      the count and gives a reviewer nothing to act on. The test is simple: if the statement would
+      be just as true written from one endpoint, it belongs there, not here. Returning nothing but
+      a name and a purpose is a correct and frequent result.
+
+      What only you can see, and what to do with each:
+
+      - `declared_policy` carries configuration keys and schema constraints in scope for this
+        module whether or not any call path reaches them. A fixed value here — a timeout, a cap, a
+        retry bound, a masked secret — is a `quality_properties` entry, quoted. An enumerated
+        vocabulary or a uniqueness guarantee is a `data_invariants` entry, with the declared values
+        quoted. A declared constraint states policy more strongly than any application code,
+        because the database enforces it whatever the code does.
+
+        **An entry marked `repository_wide` is not this module's policy.** It is declared once for
+        the whole product, every module is shown it, and it is described in its own right by the
+        cluster built from the file that declares it. Cite one only where this module is visibly
+        the thing it governs — a global retry bound in the module that does the retrying — and
+        never as a data invariant of yours. Twenty modules each restating the same schema is the
+        failure this label exists to prevent.
+      - `depends_on` names external systems this module references but never defines. One
+        `integration_points` entry per system — what it is used for, and what happens when it is
+        unavailable. One per system, never one per call.
+      - A guard, refusal or accepted-input restriction holding across several of this module's
+        boundaries is a `cross_cutting_rules` entry. Give the triggering condition, the required
+        behaviour, and the observable consequence, and cite every boundary it holds for. This is
+        the family that is genuinely invisible one level down.
+      - A behaviour the whole module must exhibit for its capabilities to hold, that no single
+        boundary establishes, is a `module_capabilities` entry.
+
+      Put the exact titles of the boundary-level requirements you are generalising in
+      `generalises`, so assembly can collapse anything of yours that turns out to say no more than
+      what sits beneath it.
+
+      A `residual` module is a collection of unrelated single behaviours gathered together, not a
+      part of the product. It has no module-level statement to make: return the code and stop.
+
+      Anything you were asked for and could not write goes in `unevidenced`, with the reason — "no
+      configuration declared in this module", "no schema here". An honest gap is read by the
+      completeness report; a guessed entry is rejected.
+
+  # Phase 3a(iii) — reduce every module worker's reply into one artifact the top tier reads.
+  - id: collect_module_analyses
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: collect_module_analyses
+    consumes: [module_fragments]
+    produces: [module_analyses]
+    on_fail: warn_and_continue
+
   # capability from the entry point and from the work behind it cite different lines by
   # construction and were never compared. Nothing ever asked whether two candidates *mean* the same
   # thing. This groups them by what they say, wherever in the repository they came from, and the
@@ -366,13 +503,20 @@ steps:
     skill: evidence-grounded-requirement-synthesis
     mode: llm
     output_schema: TopTier
-    consumes: [area_digest, graph]
+    consumes: [area_digest, module_analyses, graph]
     produces: [top_tier]
     instructions: |-
       You are given a digest of every functional area found in this repository: the area code, a
       business name, what its boundaries are, and the **titles** of the requirements already
       written for it. The requirements themselves are already written out in full, already
       grounded in cited evidence, and already carried into the document by the step after you.
+
+      You are also given `module_analyses`: one analysis per part of the product, each with the
+      name and purpose a worker that saw the whole part wrote for it. Prefer those names and
+      purposes over anything you would infer from titles alone — they were written with the
+      module's declared configuration, its schema constraints and its external dependencies in
+      view, none of which reach a title list. Where a module analysis and the area digest disagree
+      about what a part of the product is for, the module analysis saw more.
 
       **Do not restate any of them.** You are not merging or rewriting requirements. If you find
       yourself composing a sentence that describes a single capability, stop — that requirement
@@ -620,6 +764,20 @@ steps:
     capability: validate_synthesis
     consumes: [brd]
     produces: [brd, synthesis_findings]
+    on_fail: warn_and_continue
+
+  # Phase 4c — completeness, which nothing measured. Gate 1 checks the graph and Gate 2 checks
+  # that every surviving claim is grounded; neither ever asked whether the document was *complete*,
+  # so a BRD with seven of thirteen families permanently empty passed every check — each claim in
+  # it was individually well-evidenced, and there was no recall term anywhere. This distinguishes
+  # "the product declares no such policy" from "this pipeline cannot read the policy it declares",
+  # which looked identical across twenty stored runs. Reported, never enforced.
+  - id: report_family_coverage
+    skill: requirement-consolidation-and-resolution
+    mode: deterministic
+    capability: report_family_coverage
+    consumes: [brd, graph]
+    produces: [family_coverage]
     on_fail: warn_and_continue
 
 

@@ -120,6 +120,39 @@ def _render_boundary_batch_work_item(work_item: dict[str, Any]) -> dict[str, Any
     }
 
 
+@renders_work_item("modules")
+def _render_module_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `analyse_module` worker's slice: a part of the product, not one boundary.
+
+    The cluster-shaped payload would be actively misleading here — a module has many boundaries and
+    no single one of them is "the" boundary — so this renderer names them all and puts the two
+    evidence classes a module can see and a boundary cannot (`depends_on`, `declared_policy`) at
+    the top level where they are hard to miss.
+    """
+    return {
+        "module": {
+            "module_code": work_item.get("module_code"),
+            "boundary_count": work_item.get("boundary_count"),
+            "member_count": work_item.get("member_count"),
+            "residual": bool(work_item.get("residual")),
+            "boundaries": work_item.get("boundaries") or [],
+        },
+        "depends_on": work_item.get("depends_on") or [],
+        "declared_policy": work_item.get("declared_policy") or [],
+        "evidence": work_item.get("packet"),
+        "note": (
+            "You are looking at one part of the product, above the level of any single boundary. "
+            "`depends_on` names external systems this module references but never defines; "
+            "`declared_policy` carries configuration keys and schema constraints that are in "
+            "scope for this module whether or not a call path reaches them. Write only what is "
+            "true of this module as a whole — the capabilities of each boundary have already been "
+            "written in full elsewhere, and repeating one here adds nothing. A `residual` module "
+            "is a collection of unrelated single behaviours, so it usually has no module-level "
+            "statement to make: returning nothing but a name is the correct answer for it."
+        ),
+    }
+
+
 @renders("graph")
 def _render_graph(ctx: CapabilityContext, name: str) -> Any:
     """A summary only.

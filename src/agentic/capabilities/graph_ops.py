@@ -38,7 +38,14 @@ BOUNDARY_KINDS = {"ENDPOINT", "CLI_ENTRY", "SCRIPT_ENTRY", "UI_ACTION", "SCHEDUL
 # BUSINESS_RULE is deliberately absent. Most instances are incidental conditionals rather than
 # declared policy, so seeding on them would bury the real declarations. A rule in a declaration
 # file still travels with its file, as a member rather than a seed.
-DECLARATION_KINDS = {"DOMAIN_POLICY", "DATA_ENTITY", "CONFIG_KEY"}
+#
+# DATA_FIELD, DATA_INDEX and EXTERNAL_SERVICE were added when `extract_declarations` became the
+# producer for this whole family. Until then no step emitted any of these kinds at all, so the
+# ranking key below was uniformly zero and the sort collapsed to the file path — the exact defect
+# `_stratified` exists to correct, reintroduced by an empty set rather than by a bad comparator.
+DECLARATION_KINDS = {
+    "DOMAIN_POLICY", "DATA_ENTITY", "DATA_FIELD", "DATA_INDEX", "CONFIG_KEY", "EXTERNAL_SERVICE",
+}
 
 # Edges worth following when reconstructing a workflow. Import and containment edges connect
 # almost everything to everything and would make every cluster the whole graph.
@@ -322,6 +329,9 @@ def compact_entity(entity: Entity) -> dict[str, Any]:
         "DATA_ENTITY": ("description", "declares"),
         "DATA_FIELD": ("table", "type", "not_null", "default", "description", "references"),
         "DATA_INDEX": ("table", "columns", "unique", "where", "description"),
+        # A declared dependency is the only evidence a call graph carries that an external system
+        # exists at all: the repository never defines it, so nothing in the graph points at it.
+        "EXTERNAL_SERVICE": ("ecosystem", "declared_version", "source"),
     }
     # Prose that states intent earns a longer budget than an incidental attribute value. At 200
     # characters a module docstring is cut off mid-sentence, which is worse than useless: it reads
@@ -379,6 +389,7 @@ def _packet_shell(records: list[dict[str, Any]], used: int) -> dict[str, Any]:
                  "in=enclosing definition (context only — never cite it as symbol), "
                  "p=provenance, c=confidence, a=attributes",
             "out": "[edge kind, target qualified name, provenance, confidence, evidence location]",
+            "depends_on": "external systems this cluster's members reference but never define",
         },
         "records": records,
         "record_count": len(records),
@@ -386,6 +397,61 @@ def _packet_shell(records: list[dict[str, Any]], used: int) -> dict[str, Any]:
         "omitted": 0,
         "overflow": [],
     }
+
+
+# How many external systems one packet names. A cluster depending on more than this is depending
+# on a language's standard library, not on a set of integrations worth enumerating.
+MAX_DEPENDS_ON = 24
+
+
+def external_dependencies(index: "GraphIndex", member_ids: Iterable[str]) -> list[dict[str, Any]]:
+    """The external systems a cluster's members reference, as facts rather than as nodes.
+
+    `EXTERNAL_SYMBOL` is in `NOISE_KINDS` and the edges that reach it (`IMPORTS`, `REFERENCES`)
+    are outside `WORKFLOW_EDGE_KINDS`. Both exclusions are right and stay: import edges *"connect
+    almost everything to everything and would make every cluster the whole graph"*, and an
+    undefined name is not a step in a workflow.
+
+    But they made `integration_requirements` impossible to write rather than merely hard. The
+    manifest asks for *"one per external system this cluster depends on, and what happens when it
+    is unavailable"*, and every node naming such a system was filtered out before the packet was
+    built — so the honest reply was always an empty list. Carrying them as a separate, deduplicated
+    field keeps them out of traversal (nothing is reachable *through* a dependency) while putting
+    the fact itself in front of the model.
+
+    A name declared in a dependency manifest is reported with its `EXTERNAL_SERVICE` evidence, so a
+    claim about it can cite the manifest line. A name only referenced in code carries no location
+    and says so.
+    """
+    members = set(member_ids)
+    declared: dict[str, Entity] = {
+        entity.name.strip(". ()").casefold(): entity
+        for entity in index.entities.values()
+        if entity.kind == "EXTERNAL_SERVICE"
+    }
+
+    found: dict[str, dict[str, Any]] = {}
+    for member in members:
+        for relationship in index.outgoing.get(member, []):
+            if relationship.kind not in {"IMPORTS", "REFERENCES", "INHERITS"}:
+                continue
+            target = index.entities.get(relationship.target)
+            if target is None or target.kind not in {"EXTERNAL_SYMBOL", "EXTERNAL_SERVICE"}:
+                continue
+            name = target.name.strip(". ()")
+            key = name.casefold()
+            if not name or key in found:
+                continue
+            record: dict[str, Any] = {"name": name, "via": relationship.kind}
+            # A manifest entry is the stronger evidence: it proves the dependency is declared by
+            # the product rather than inferred from a bare name the parser could not resolve.
+            if match := declared.get(key):
+                record["declared_version"] = match.attributes.get("declared_version") or ""
+                record["ecosystem"] = match.attributes.get("ecosystem") or ""
+                if match.location is not None:
+                    record["at"] = match.location.compact()
+            found[key] = record
+    return sorted(found.values(), key=lambda item: item["name"])[:MAX_DEPENDS_ON]
 
 
 def build_packets(
@@ -403,11 +469,16 @@ def build_packets(
     """
     packets: list[dict[str, Any]] = []
     remaining = list(entity_ids)
+    # Computed once over the whole cluster, not per slice: a dependency belongs to the cluster, and
+    # a model reading part 3 of 4 still needs to know what the whole thing talks to.
+    depends_on = external_dependencies(index, entity_ids)
     while remaining and len(packets) < max_parts:
         packet = build_packet(index, remaining, char_budget=char_budget)
         overflow = packet.pop("overflow", [])
         if not packet["records"]:
             break
+        if depends_on:
+            packet["depends_on"] = depends_on
         # What overflowed this packet is about to go into the next one, so it is not omitted.
         # Only whatever is still unplaced when the loop ends really failed to reach a packet.
         packet["omitted"] = 0
@@ -638,6 +709,81 @@ def declaration_groups(
     return groups
 
 
+# Nodes whose text is already carried somewhere better, so a residual packet made of them would
+# spend a call to say nothing. RATIONALE is redundant since docstring attachment copies its text
+# onto the entity it describes; SYMBOL is an unresolved name with no body to describe.
+_RESIDUAL_SKIP_KINDS = NOISE_KINDS | {"RATIONALE", "SYMBOL", "FILE"}
+
+# Declarations have their own path — `declaration_groups` builds a cluster per declaring file, and
+# `partition_modules` hands module-local policy to the module that owns it. Letting residual pick
+# them up as well produced two clusters over one `schema.sql`: a declaration cluster led by the
+# FILE and a residual cluster led by a DATA_ENTITY in the same file, describing the same tables
+# twice at the cost of an extra call each time.
+_RESIDUAL_EXCLUDED_KINDS = _RESIDUAL_SKIP_KINDS | DECLARATION_KINDS
+
+# A directory holding less than this, none of it reached, is a stray helper rather than a
+# subsystem. One packet per stray would cost a call each to describe a utility.
+MIN_RESIDUAL_MEMBERS = 4
+
+# Members one declaring file may contribute. See the call site for why it is not `max_clusters`.
+DECLARATION_MEMBERS_PER_FILE = 400
+
+
+def _residual_groups(index: GraphIndex, reached: set[str]) -> list[dict[str, Any]]:
+    """Cluster seeds for meaningful code no boundary walk and no declaration group reached.
+
+    "Externally reachable" is the right grounding rule for a *requirement* and the wrong rule for
+    *coverage*. A scheduled job, a migration, an admin script or a whole subsystem no route
+    touches is still implemented behaviour somebody has to maintain, and under boundary-only
+    clustering none of it reached a model at all — on the reference run, 87.5% of the graph.
+
+    Two facts make this affordable rather than expensive. Packets were running at a fifth of their
+    character budget, so the room to carry this was already paid for; and grouping by directory
+    rather than by file keeps the call count in the tens rather than the hundreds.
+
+    A residual cluster has no boundary above it, which is why it carries its own class and its own
+    manifest section: the synthesis instruction "work outward from the boundary" is meaningless
+    here, and asking for a functional requirement from unreachable code would invite exactly the
+    unreachable claim Gate 2 exists to reject.
+    """
+    unreached_by_directory: dict[str, list[Entity]] = defaultdict(list)
+    for entity in index.entities.values():
+        if entity.id in reached or entity.kind in _RESIDUAL_EXCLUDED_KINDS:
+            continue
+        if entity.location is None or not entity.location.file:
+            continue
+        path = entity.location.file
+        directory = path.rsplit("/", 1)[0] if "/" in path else "."
+        unreached_by_directory[directory].append(entity)
+
+    ranked = sorted(
+        unreached_by_directory.items(),
+        # Total degree first: the most-connected residue is the most likely to be a real
+        # subsystem rather than a pile of dead helpers. Path only as a stable tiebreak, never as
+        # the primary key — that is the truncation defect `_stratified` exists to correct.
+        key=lambda item: (-sum(index.degree(entity.id) for entity in item[1]), item[0]),
+    )
+
+    groups: list[dict[str, Any]] = []
+    for directory, entities in ranked:
+        if len(entities) < MIN_RESIDUAL_MEMBERS:
+            continue
+        ordered = sorted(entities, key=lambda entity: (-index.degree(entity.id), entity.qualified_name))
+        lead = ordered[0]
+        groups.append(
+            {
+                "boundaries": [lead],
+                "members": [entity.id for entity in ordered],
+                # Its own class so the stratifier's per-class floor guarantees residual code is
+                # described even when interaction boundaries consume the whole cap.
+                "class": "RESIDUAL",
+                "residual": True,
+                "directory": directory,
+            }
+        )
+    return groups
+
+
 @capability("build_boundary_clusters")
 def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     """Partition the graph into one evidence packet per interaction boundary.
@@ -649,6 +795,15 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     graph = ctx.load("graph", KnowledgeGraph)
     index = GraphIndex(graph)
     settings = ctx.settings
+
+    # Optional so this step still runs standalone in tests and with `module_analysis` off, in which
+    # case every cluster carries an empty module code and the worker falls back to inventing an
+    # area exactly as before.
+    module_of: dict[str, str] = {}
+    if "boundary_modules" in (ctx.state.get("artifacts") or {}):
+        loaded = ctx.load("boundary_modules")
+        if isinstance(loaded, dict):
+            module_of = {str(key): str(value) for key, value in loaded.items()}
 
     boundaries = index.boundary_ids()
     # Rank by connectivity so that, when the cluster cap bites, the richest workflows survive.
@@ -717,14 +872,53 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     if getattr(settings, "declaration_clusters", True):
         reached = {member for group in groups for member in group["members"]}
         extra = declaration_groups(
-            index, reached, limit_per_file=max(1, settings.max_clusters)
+            index,
+            reached,
+            # Generous on purpose. This used to be `max_clusters`, which silently truncated a real
+            # schema: 34 tables and 363 columns against a limit of 80 dropped most of the columns,
+            # and a column is where a `NOT NULL` or a default actually lives. An oversized group is
+            # split across packets by `build_packets` rather than truncated, so the only cost of a
+            # high limit is one more bounded call, and it is paid only where a file declares that
+            # much.
+            limit_per_file=max(settings.max_clusters, DECLARATION_MEMBERS_PER_FILE),
         )
         declarations = len(extra)
         groups = groups + extra
         planned = planned + _stratified(extra, max(1, settings.max_clusters // 4))
 
+    # Everything meaningful that no boundary walk and no declaration group reached.
+    #
+    # Boundary clustering answers "what can an outside actor cause to run", which is the right
+    # question and an incomplete one: on the reference run it reached 634 of 5,084 nodes (12.5%)
+    # while the packets it built ran at 20% of their character budget. Background jobs, migrations,
+    # admin scripts and whole subsystems no route touches produced nothing at all, and the budget
+    # to describe them was already being paid for and left unspent.
+    #
+    # Grouped by directory rather than by file, because an unreached subsystem is a directory's
+    # worth of code and one packet per file would cost a call per file to say very little. Ranked
+    # by degree so the most-connected residue is described first if the cap bites — the same
+    # reasoning `declaration_groups` applies to declarations and `primary` applies to boundaries.
+    residual_groups: list[dict[str, Any]] = []
+    if getattr(settings, "residual_clusters", True):
+        reached = {member for group in groups for member in group["members"]}
+        residual_groups = _residual_groups(index, reached)
+        groups = groups + residual_groups
+        planned = planned + _stratified(
+            residual_groups, max(1, settings.max_clusters // 2)
+        )
+
     present_by_class: Counter[str] = Counter(group["class"] for group in groups)
     planned_by_class: Counter[str] = Counter(group["class"] for group in planned)
+
+    # What coverage is measured against. Not every entity: a RATIONALE node's text is already
+    # carried as a docstring on the entity it describes, and an unresolved SYMBOL or an
+    # EXTERNAL_SYMBOL has no body to describe, so counting them would make full coverage
+    # unreachable by definition and the percentage meaningless.
+    meaningful = {
+        entity.id
+        for entity in index.entities.values()
+        if entity.kind not in _RESIDUAL_SKIP_KINDS or entity.kind == "FILE"
+    }
 
     clusters: list[dict[str, Any]] = []
     covered: set[str] = set()
@@ -756,6 +950,21 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
                     "member_count": len(member_ids),
                     "part": part,
                     "of_parts": len(packets),
+                    # Assigned from the module partition rather than invented by the worker.
+                    #
+                    # Every synthesis worker used to choose its own `area_code` while seeing only
+                    # its own nine-node packet, and the manifest asked them to agree: "clusters
+                    # covering the same part of the product must use the same code". They cannot —
+                    # they run in parallel and none sees another's reply. On the reference run that
+                    # produced four separate areas for batches (ARCH, BAP, BATC, BCH) and fourteen
+                    # areas holding a single capability. A code handed down from the partition is
+                    # the only version of that instruction a worker can actually obey.
+                    "module_code": module_of.get(lead.id, ""),
+                    # A residual cluster has no boundary above it. Saying so lets the worker skip
+                    # the "work outward from the boundary" frame instead of inventing a boundary
+                    # for code nothing reaches.
+                    "residual": bool(group.get("residual")),
+                    "directory": group.get("directory"),
                     "packet": packet,
                 }
             )
@@ -801,6 +1010,14 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             f"{truncated} graph node(s) still did not reach any evidence packet after splitting, "
             "so nothing will be written about them. They are listed in the gap analysis."
         )
+    if residual_groups:
+        planned_residual = sum(1 for group in planned if group.get("residual"))
+        messages.append(
+            f"{planned_residual} of {len(residual_groups)} directory/directories of implemented "
+            "code that no interaction boundary reaches were read as clusters of their own. A "
+            "scheduled job or an admin subsystem is implemented behaviour whether or not a route "
+            "touches it; under boundary-only clustering none of it reached a model at all."
+        )
     if declarations:
         planned_declarations = sum(
             1 for group in planned if group.get("declaration")
@@ -832,7 +1049,23 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             "boundaries_merged": merged,
             "boundaries_omitted": omitted,
             "graph_nodes_covered": len(covered),
+            # Coverage as a fraction, not just a count. The count was already emitted and nothing
+            # read it, which is how a pipeline reached 12.5% coverage across twenty stored runs
+            # without anyone noticing. A percentage is legible at a glance; a raw count is not.
+            "graph_nodes_meaningful": len(meaningful),
+            "graph_coverage_percent": round(100.0 * len(covered & meaningful) / max(1, len(meaningful)), 1),
+            "residual_groups": len(residual_groups),
+            "residual_clusters": sum(1 for item in clusters if item.get("residual")),
             "packet_chars": sum(item["packet"]["chars"] for item in clusters),
+            # Utilisation, for the same reason. Packets running at a fifth of budget is the signal
+            # that the traversal — not the budget — is what limits how much evidence reaches a
+            # model, and it is invisible unless something divides the two numbers.
+            "packet_budget_percent": round(
+                100.0
+                * (sum(item["packet"]["chars"] for item in clusters) / max(1, len(clusters)))
+                / max(1, settings.evidence_packet_chars),
+                1,
+            ),
         },
         messages=messages,
     )

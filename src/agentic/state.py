@@ -66,6 +66,12 @@ class AgentState(TypedDict, total=False):
     # its counts or hide silently behind permissive validation, neither of which is `attributable`.
     boundary_fragments: Annotated[list[dict[str, Any]], operator.add]
 
+    # A third fan-out channel: one entry per `analyse_module` worker, reduced by
+    # `collect_module_analyses`. Separate for the same reason `boundary_fragments` is — a
+    # `ModuleAnalysis` is not a `BRDFragment`, and every field on `BRDFragment` has a default, so
+    # `model_validate` would accept one and silently publish an empty fragment rather than fail.
+    module_fragments: Annotated[list[dict[str, Any]], operator.add]
+
     # Set per-branch by the fan-out dispatcher. Read by a worker, never written back, so parallel
     # branches cannot conflict over it.
     work_item: dict[str, Any] | None
@@ -101,6 +107,7 @@ def initial_state(
         metrics={},
         fragments=[],
         boundary_fragments=[],
+        module_fragments=[],
         gate_reports={},
         repair_attempts=0,
         status="running",

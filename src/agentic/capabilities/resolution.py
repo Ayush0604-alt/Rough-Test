@@ -790,3 +790,101 @@ def validate_synthesis(ctx: CapabilityContext) -> CapabilityResult:
         },
         messages=messages,
     )
+
+
+# What evidence class each requirement family rests on, and therefore what a reader should
+# conclude from an empty one. This is the table that turns "the document has no non-functional
+# requirements" into either "this product declares no limits" or "nothing in this pipeline can
+# read the limits it declares" — two very different facts that looked identical for twenty runs.
+FAMILY_EVIDENCE: dict[str, tuple[str, tuple[str, ...]]] = {
+    "functional_requirements": ("an interaction boundary", ("ENDPOINT", "REGISTERED_ENTRY", "UI_ACTION", "CLI_ENTRY", "SCRIPT_ENTRY", "SCHEDULED_JOB")),
+    "business_rules": ("a declared guard or schema constraint", ("DOMAIN_POLICY", "BUSINESS_RULE", "CONFIG_KEY")),
+    "success_criteria": ("a fixed pass/fail condition in code", ("ERROR_HANDLER", "CONFIG_KEY")),
+    "system_requirements": ("internal behaviour a capability depends on", ("FUNCTION", "METHOD")),
+    "technical_constraints": ("a platform or protocol limit", ("CONFIG_KEY", "EXTERNAL_SERVICE")),
+    "data_requirements": ("a declared schema", ("DATA_ENTITY", "DATA_FIELD", "DATA_INDEX", "DOMAIN_POLICY")),
+    "integration_requirements": ("a declared external dependency", ("EXTERNAL_SERVICE", "EXTERNAL_SYMBOL")),
+    "non_functional_requirements": ("a declared operating value", ("CONFIG_KEY",)),
+    "reporting_requirements": ("a view, export or listing boundary", ("ENDPOINT", "UI_ACTION")),
+}
+
+
+@capability("report_family_coverage")
+def report_family_coverage(ctx: CapabilityContext) -> CapabilityResult:
+    """Say, per requirement family, whether it is empty because of the product or because of us.
+
+    Gate 1 checks the graph's structure. Gate 2 checks that every surviving claim is grounded.
+    **Neither ever checked that the document was complete**, so a document with seven of thirteen
+    families permanently empty passed every check — every claim in it was individually
+    well-evidenced, and nothing measured recall. Across twenty stored runs `business_rules`,
+    `success_criteria`, `technical_constraints`, `data_requirements`, `integration_requirements`,
+    `non_functional_requirements` and `assumptions` were empty every single time, and no artifact
+    said so.
+
+    The distinction this draws is the one that matters to a reader. A family with no requirements
+    and **no evidence in the graph either** is an honest statement about the product: it declares
+    no limits, or it integrates with nothing. A family with no requirements but with evidence
+    sitting in the graph unused is a defect in this pipeline, and it is named as one here.
+
+    Reported, never enforced. A thin document is a fact about a codebase as often as it is a bug,
+    and deciding which is a person's job — this step's only duty is to make sure they are told.
+    """
+    brd = ctx.load("brd", ProductBRD)
+    graph = ctx.load("graph", KnowledgeGraph)
+
+    present: Counter[str] = Counter(entity.kind for entity in graph.entities)
+    sections = {**brd.sections(), **brd.supplements()}
+
+    families: list[dict[str, Any]] = []
+    unevidenced = 0
+    unused = 0
+    for family, (description, kinds) in FAMILY_EVIDENCE.items():
+        published = len(sections.get(family) or [])
+        evidence = {kind: present.get(kind, 0) for kind in kinds if present.get(kind, 0)}
+        if published:
+            verdict = "populated"
+        elif evidence:
+            verdict = "evidence_unused"
+            unused += 1
+        else:
+            verdict = "no_evidence_in_repository"
+            unevidenced += 1
+        families.append(
+            {
+                "family": family,
+                "published": published,
+                "rests_on": description,
+                "evidence_available": evidence,
+                "verdict": verdict,
+            }
+        )
+
+    messages: list[str] = []
+    if unused:
+        names = [item["family"] for item in families if item["verdict"] == "evidence_unused"]
+        messages.append(
+            f"{unused} requirement family/families are empty although the graph carries evidence "
+            f"they could rest on: {', '.join(names)}. That is a gap in this pipeline, not a "
+            "statement about the product, and it is the one kind of thin section worth chasing."
+        )
+    if unevidenced:
+        names = [
+            item["family"] for item in families if item["verdict"] == "no_evidence_in_repository"
+        ]
+        messages.append(
+            f"{unevidenced} requirement family/families are empty because the repository declares "
+            f"nothing they could rest on: {', '.join(names)}. This is an honest result — the "
+            "product states no such policy — and not a coverage failure."
+        )
+    if not unused and not unevidenced:
+        messages.append("Every requirement family carries at least one published requirement.")
+
+    return CapabilityResult(
+        artifacts={"family_coverage": {"families": families}},
+        metrics={
+            "families_populated": sum(1 for item in families if item["verdict"] == "populated"),
+            "families_evidence_unused": unused,
+            "families_without_evidence": unevidenced,
+        },
+        messages=messages,
+    )

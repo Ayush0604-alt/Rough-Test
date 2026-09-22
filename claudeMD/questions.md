@@ -23,6 +23,7 @@ was right). This file is the "why does that make sense?" layer between them.
 - [J. The skill-pack architecture](#j-the-skill-pack-architecture) — Q77–Q86
 - [K. Pack 2: requirements to test specifications](#k-pack-2-requirements-to-test-specifications) — Q87–Q96
 - [L. Operating it](#l-operating-it) — Q97–Q104
+- [M. What reaches the model, and why not all of it](#m-what-reaches-the-model-and-why-not-all-of-it) — Q105–Q111
 
 ---
 
@@ -1173,6 +1174,375 @@ reasons"* — one says what the extractors found, the other what the document ma
 
 Bear in mind roughly forty thresholds are scattered across the modules and each is defended in a
 comment where it lives; there is no single table of them yet.
+
+---
+
+## M. What reaches the model, and why not all of it
+
+Section B explains why a graph exists and section D explains why packets are budgeted. This section
+answers the question that follows from both: *given that we built a graph of the whole repository,
+how much of it actually reaches a model, and what would it take to send all of it?*
+
+Every number below is measured from the stored run `runs/2584e3a7-…` — a 381-file, two-language
+repository with 5,084 graph entities — not estimated.
+
+### Q105. How is the knowledge graph actually built, step by step?
+
+Four steps, three of them deterministic.
+
+**1. `ingest` → `inventory`.** Walks the source root and records every file with its path,
+extension, language, size, `sha256` and a `parseable` flag (`capabilities/ingest.py`). It halts
+rather than continuing when there is nothing analysable, *"rather than fabricating a document from
+file names."* Note what this step does **not** do: it lists `schema.sql`, `.env.example`,
+`docker-compose.yml`, `requirements.txt` and `Dockerfile` — and nothing ever opens them. See Q111.
+
+**2. `graphify_extract` → `graphify_raw`.** Shells out to the `graphify` binary
+(`capabilities/graphify.py:graphify_extract`), which parses 36 languages with local tree-sitter
+grammars — no API calls, no second model vendor, fully reproducible. Three flags matter:
+
+```
+--code-only       structure only; document/PDF concept extraction is a later increment
+--no-cluster      Graphify's own Leiden community pass is off, because this pipeline
+                  partitions the graph itself around interaction boundaries, and two
+                  competing partitions would both try to feed the evidence packets
+--no-gitignore    an uploaded snapshot often carries a .gitignore from a different
+                  checkout layout, which would silently exclude the source under analysis
+```
+
+Failure **halts** the run: under a full swap Graphify is the only extractor, so continuing *"would
+publish a document built on nothing and report it as success."*
+
+**3. `adapt_graph` → `graph`.** The largest deterministic module in the project (~800 lines) and the
+one that does the real work, because **Graphify emits structure, not intent**: no `kind` field, no
+line ranges, and nothing that marks a route, a command or a schema. The adapter therefore has to:
+
+- **Classify every node's kind** (`classify_kind`). Ordered most-certain-first because signals
+  overlap. Two hard-won details live here: the `()` label suffix is checked *before* Graphify's own
+  `_callable` flag, because the Go grammar does not mark a `func` as callable and a Go repository
+  classified on that flag alone *"lands every function under SYMBOL, is excluded from call
+  traversal, and produces an empty document"*; and file nodes are matched by **path suffix** rather
+  than basename, because any repository with a repeated `__init__.py` or `index.ts` otherwise lost
+  every file node to `SYMBOL`.
+- **Reconstruct line ranges.** Graphify reports a start line and never an end, so `line_end` is
+  estimated — 4,076 of 5,084 entities in this run carry `line_end_estimated`.
+- **Attach docstrings** (added 2026-09-18; see `changes/add_semantics_to_graph.md`). Reads the full
+  comment block back from source and hangs it on the entity it describes. 923 entities in this run
+  carry a `docstring`. This is currently the *only* semantic content in the graph.
+
+**4. Boundary discovery folds classifications back in.** `propose_boundary_candidates` ranks nodes
+worth asking about from graph shape alone, `classify_boundaries` asks a model to name them (fanned
+out one call per batch of 120 since 2026-09-18 — see `changes/batch_boundary_classification.md`),
+`collect_boundary_assignments` reduces the replies, and `discover_entry_points` writes them back as
+`ENDPOINT`, `REGISTERED_ENTRY`, `UI_ACTION` and `SCRIPT_ENTRY` nodes.
+
+What comes out, for this repository:
+
+```
+FUNCTION         1781      ENDPOINT            157
+RATIONALE         928      REGISTERED_ENTRY    109
+CLASS             450      EXTERNAL_SYMBOL     256
+SYMBOL            417      UI_ACTION            26
+MODULE_SURFACE    406      SCRIPT_ENTRY          1
+FILE              381      METHOD              172
+                                    total: 5,084 entities / 11,813 relationships
+
+CALLS 3681   CONTAINS 2769   IMPORTS 2658   REFERENCES 1200
+EXPLAINS 928   EXPOSES 293   INHERITS 174   REGISTERS 59   RELATED_TO 50   TRIGGERS 1
+```
+
+**Read that list carefully: it is a call graph.** Who calls whom, who contains whom, who imports
+whom. That is the single most important fact about what the model later has to work with.
+
+### Q106. What exactly are we passing to the model, and what never reaches it?
+
+One **evidence packet** per cluster, and nothing else — no source text, by design (Q29). A packet is
+a list of records, each one node plus its outgoing workflow edges. Verbatim, from this run:
+
+```json
+{"n": {"k":"CLASS", "q":"…/services/chatbot.ts::ChatResult",
+       "at":"…/services/chatbot.ts:L3-16:ChatResult",
+       "p":"EXTRACTED", "c":1.0, "a":{}},
+ "out": [["EXPOSES","./api","INFERRED",0.55,"…:L3-16:ChatResult"]]}
+```
+
+`k` kind, `q` qualified name, `at` file:lines:symbol, `p` provenance, `c` confidence, `a`
+attributes. Each `out` entry is `[edge kind, target, provenance, confidence, evidence location]`.
+
+Measured, across all 84 clusters of this run:
+
+```
+distinct entities reaching any packet      634  of 5,084   =  12.5%
+median packet                              9 records / 3,343 chars
+largest packet                             67 records / 39,948 chars
+packet budget (evidence_packet_chars)      40,000 chars
+average packet                             8,103 chars  →  20% of budget used
+packets reporting omissions                0 of 84
+```
+
+Two filters decide the 12.5%, both in `capabilities/graph_ops.py`:
+
+```python
+NOISE_KINDS = {"IMPORTED_SYMBOL", "EXTERNAL_SYMBOL"}                    # line 55
+WORKFLOW_EDGE_KINDS = {"CALLS","ENFORCES","PERFORMS","HANDLES",
+                       "READS_CONFIG","EXPOSES","TRIGGERS","REGISTERS"} # line 45
+```
+
+So four kinds **never reach any packet** in this run — all 381 `FILE`, all 417 `SYMBOL`, all 928
+`RATIONALE`, all 256 `EXTERNAL_SYMBOL` — and `IMPORTS`, `CONTAINS`, `REFERENCES` and `INHERITS` are
+never walked. Both exclusions were correct for a workflow traversal: *"Import and containment edges
+connect almost everything to everything and would make every cluster the whole graph."* `RATIONALE`
+is now genuinely redundant, since the docstring change copies its text onto the entity it describes.
+`EXTERNAL_SYMBOL` is a different matter — see Q109.
+
+The other constraint is that clustering **seeds only from interaction boundaries**
+(`build_boundary_clusters`), so anything no boundary reaches is invisible unless
+`declaration_groups` picks it up. That second path exists and does not currently fire — Q111.
+
+### Q107. How is the graph helping us, concretely?
+
+Section B/Q8 gives the four designed reasons. What is worth recording here is which of them the
+graph is **actually delivering today**:
+
+| Designed property | Delivered? |
+|---|---|
+| Cost linear in interesting places, not repository size | **Yes.** 84 bounded calls for a 381-file repo; the same repo at 5× the files with the same endpoint count costs roughly the same. |
+| Fabrication detectable by construction | **Yes.** Every citation is re-resolved against the real file system in Gate 2 (`capabilities/verify.py:verify_location`). This is the property the whole design rests on and it holds. |
+| "Reachable from outside" answerable at all | **Yes.** `boundary_downstream()` answers it by walking edges; no amount of file reading would. |
+| Stable contract that let extraction be replaced | **Yes, and proven.** The Python-only AST extractors were swapped for Graphify and nothing downstream of `plan_clusters` changed. |
+| **Enough semantic content to write a full requirements document** | **No.** This is the gap. |
+
+That last row is the honest one. The graph makes the document *trustworthy*; it does not currently
+make it *complete*. Across all 20 stored runs:
+
+```
+                              populated in
+functional_requirements          19/20
+business_requirements            13/20
+system_requirements               5/20
+out_of_scope, open_questions      3/20
+──────────────────────────────────────────
+business_rules                    0/20
+success_criteria                  0/20
+technical_constraints             0/20
+data_requirements                 0/20
+integration_requirements          0/20
+non_functional_requirements       0/20
+reporting_requirements            0/20
+assumptions                       0/20
+```
+
+Seven requirement families have **never** been produced — not sparse, never. And the synthesis step
+returns 1.42 findings per cluster against its own stated ceiling of 34 (14 functional + 12 rules +
+8 criteria), so it is running at roughly 4% of designed yield.
+
+The cause is not that the prompt fails to ask. `pack.yaml` lines 305–320 ask for all four missing
+families with good definitions (*"a timeout, a size cap, a retry bound, a concurrency guard, an
+authorisation gate, a masked secret"*). The cause is that a packet of nine records with `"a":{}` and
+no source text **cannot contain a timeout value**, and the master skill correctly forbids guessing
+one. The 0/20 is the system being honest, not broken.
+
+### Q108. What prevents us passing the whole graph to the model?
+
+Three things, in order of how absolute they are.
+
+**1. It does not fit, by a factor of four.** Serialising every entity of this graph at current
+packet density:
+
+```
+4,828 records · 1,871,936 chars · ≈535,000 input tokens
+```
+
+The Azure deployment is a 128k-context model (`llm/client.py`). The largest stored run is ~4× this
+repository, so ~2M tokens. There is no window this fits in, and no near-term window that fits the
+next repository up.
+
+**2. The architecture exists specifically to prevent it.** `llm/prompt.py:127`, on the `graph`
+artifact renderer: *"The whole graph must never enter a prompt — that is precisely the cost failure
+this architecture exists to prevent. Detailed evidence arrives through cluster packets instead."*
+Sending everything would also destroy the fan-out parallelism and make every run's cost a function
+of repository size rather than of interaction surface.
+
+**3. A single flat dump is worse evidence even where it fits.** A model given 5,000 unordered nodes
+has no signal about which are entry points, what calls what, or which subgraph is one workflow.
+Packets are ordered breadth-first from a boundary precisely so that structure is legible. This is
+why *"the whole graph in one call"* is not simply a bigger version of the current design — it is a
+worse one.
+
+**But note what is *not* on this list: cost.** See Q109.
+
+### Q109. If every node did reach the model, what would improve — and what would it cost?
+
+The right question is not "can the whole graph fit in one call" (no, Q108) but "**can every node
+reach some call**" — the same distinction `changes/batch_boundary_classification.md` drew one layer
+down, where the fix for a truncating cap was to partition rather than to select.
+
+Measured, for full coverage of every meaningful node (dropping `RATIONALE` as redundant and
+`SYMBOL` as low-value):
+
+```
+                         today          full coverage
+records reaching a model    634 / 5,084    3,483 / 3,483
+LLM calls                    84             ~39
+chars carried             680,660        1,553,276
+avg budget utilisation       20%            ~100%
+```
+
+**Full coverage is cheaper than what we do today: ~39 well-packed calls instead of 84
+quarter-empty ones.** 2.3× the evidence for roughly half the calls. The 40,000-char budget has never
+been the binding constraint — zero of 84 packets reported an omission. The constraint is the
+traversal: 84 boundaries each walk a short distance along `WORKFLOW_EDGE_KINDS` and dead-end.
+
+What would improve, in order of expected effect:
+
+1. **`integration_requirements` become possible at all.** `EXTERNAL_SYMBOL` is the only
+   external-system signal the graph carries, and all 256 of them are filtered out by `NOISE_KINDS`.
+   The prompt asks for *"one per external system this cluster depends on"* while every node that
+   names one is deleted before the packet is built. The fix is not to make them walkable — that
+   would make every cluster the whole graph, exactly as the comment warns — but to attach a
+   deduplicated `depends_on` list to each packet as a fact rather than a node.
+2. **Non-boundary machinery gets described.** Background jobs, scheduled tasks, migrations, admin
+   scripts and data pipelines are reachable from no boundary and therefore produce nothing today.
+3. **Declaration files get read.** Which is where the remaining six empty families live — Q111.
+
+And the drawbacks, honestly:
+
+- **Consolidation has never run at that volume.** 2.3× the evidence means more findings, and
+  `consolidate` / `resolve` / `score_confidence` are tuned against ~119 findings, not ~300. Expect
+  the first full-coverage run to look noisier before it looks deeper.
+- **A packet with no boundary needs different instructions.** The synthesis prompt's whole frame is
+  *"work outward from the boundary"*, which is meaningless for a residual cluster. That is a new
+  section in the synthesis skill, not new code — but it is not free.
+- **Nothing currently measures completeness**, so there is no baseline to prove the change helped.
+  `graph_nodes_covered` is already emitted as a metric by `plan_clusters` and nothing reads it.
+
+### Q110. How do people solve this in practice today?
+
+The problem — a structured corpus far larger than any context window, where an answer needs global
+coverage — is well-trodden. The established approaches, and where this project sits against each:
+
+**1. Graph partitioning plus map-reduce over the parts.** Split the graph into communities (Leiden,
+Louvain), summarise each part independently, then reduce the summaries. This is the core of
+Microsoft's GraphRAG and of most "global question over a large corpus" designs. **This project
+already does this**, and does it better than a generic community pass: it partitions around
+interaction boundaries, which is semantically meaningful for the question being asked, and it is
+explicitly why `--no-cluster` disables Graphify's own Leiden pass. The gap is only that the
+partition does not cover the whole graph.
+
+**2. Hierarchical summarisation.** Summarise leaves, then summarise the summaries, so the top level
+sees the whole system at low resolution and detail is fetched on demand. **This project already has
+it** as the `synthesize` → `cluster_candidates` → `digest_areas` → `elevate` ladder; `area_digest`
+is deliberately *"titles only"* so the top tier sees every area without seeing every finding.
+
+**3. Retrieval instead of enumeration.** Embed nodes, retrieve the top-k relevant to each question,
+and accept that you never see the rest. This is the mainstream RAG answer and it is **the wrong fit
+here**, because the deliverable is a *complete* requirements document — "the relevant 5%" is exactly
+the failure mode being fixed. Retrieval solves "answer this question"; it does not solve "enumerate
+everything this system does."
+
+**4. Agentic traversal — give the model tools, not a dump.** Rather than serialising the graph,
+expose `neighbours(node)`, `callers(node)`, `read_lines(file, a, b)` and let the model walk where it
+decides to. This is the direction most code-understanding agents have moved (and how Claude Code
+itself works on a repository). Strengths: unbounded effective context, and the model pulls exactly
+the detail it needs. Costs: many round trips per cluster, non-deterministic coverage, and — decisive
+for this project — **it breaks the fabrication guarantee**, because the model chooses what it sees
+and there is no fixed evidence set to check a citation against. Worth considering as an *opt-in
+deepening pass* on clusters flagged thin, never as the default path.
+
+**5. Deterministic code intelligence instead of a model.** Sourcegraph's SCIP/LSIF indexes, Meta's
+Glean, CodeQL, Semgrep and tree-sitter stacks all answer structural questions — what calls this,
+what implements that, where is this config key read — precisely, cheaply and with no context window
+at all. **The lesson this project should take is that the answer to "the graph is too big" is often
+"extract more, ask the model less."** Every fact moved from a model step into a deterministic
+extractor is a fact that costs nothing, never hallucinates, and does not consume context. That is
+exactly what Q111 describes.
+
+**6. Prompt caching and context compression.** Shared prefixes cached across fan-out calls (for this
+project, the ~5,600-token system prompt is byte-identical across every worker and sits at the
+prefix, so it is a textbook candidate), plus schema-level compaction — which `compact_entity`
+already does: *"the packet is evidence, not a copy of the source."* Worth noting nothing in `src/`
+declares caching explicitly (`grep` finds no `cache_control`), so whether Azure's automatic prefix
+caching is actually being hit is currently unverified and unmeasured.
+
+**7. Bigger windows.** Real, and not the answer. Window growth has been roughly linear while
+codebases are unbounded; the 2M-token graph above would still not fit, cost would scale with
+repository size rather than interaction surface, and recall degrades in the middle of very long
+contexts. Every serious system still partitions.
+
+The short version: **the industry answer is partition + hierarchy + deterministic extraction, and
+this project has the first two already.** What it is missing is the third.
+
+### Q111. So what is the actual bottleneck — the graph, the packets, or the prompt?
+
+None of the three. It is **one missing producer**, and the evidence for that is unusually clean.
+
+`capabilities/graph_ops.py:570`, `declaration_groups()` — a mechanism built for exactly the problem
+of declarations no call path reaches:
+
+> A packet is grown outwards from a boundary, so evidence is only ever seen if something calls it.
+> That is the right question for behaviour and the wrong one for a declaration: a schema states the
+> values a column may take whether or not a handler happens to touch it, and a README sentence
+> stating a limit is not called by anything at all. **Such evidence was extracted and then dropped
+> on the floor.**
+
+It is fully wired: called from `plan_clusters`, budgeted separately at `max_clusters // 4` (with a
+long comment explaining why pooling the two budgets is wrong), switchable via
+`declaration_clusters: bool = True`, ranked richest-file-first to avoid the alphabetical-truncation
+defect, and reported in both `messages` and `metrics`. Then, at line 41:
+
+```python
+DECLARATION_KINDS = {"DOMAIN_POLICY", "DATA_ENTITY", "CONFIG_KEY"}
+```
+
+**No producer emits any of those three kinds.** So the ranking key
+`-sum(1 for e in entities if e.kind in DECLARATION_KINDS)` is always zero, the sort collapses to the
+file path, and the comment three lines above it explains that path-ordering *is* the exact defect
+`_stratified` exists to correct. The mechanism is live, correct, and inert.
+
+The same is true one layer up. `compact_entity` carries hand-written attribute whitelists for seven
+kinds nothing emits:
+
+```
+BUSINESS_RULE   predicate, when_true, status_code, allowed_values, constraint, table…
+CONFIG_KEY      source, value, secret_like
+DATA_ENTITY     description, declares
+DATA_FIELD      table, type, not_null, default, references
+DATA_INDEX      table, columns, unique, where
+ERROR_HANDLER   exception, behavior
+DATA_OPERATION  operation, call
+```
+
+`render.py` renders them, `gates.py` checks them, `claims.py` reads them. They are orphaned
+contracts from the pre-Graphify AST extractors: the swap bought 36 languages and paid with every
+semantic node kind, and nothing downstream was told. Those seven kinds map one-to-one onto the seven
+empty requirement families.
+
+And the inputs are already on disk and already inventoried. For the run measured throughout this
+section, `inventory.json` lists `app/db/schema.sql`, `app/models/schemas.py`, `.env.example`,
+`docker-compose.yml`, `requirements.txt`, `package.json` and three `Dockerfile`s — every one of
+them hashed, recorded, and never opened by any step.
+
+So the ranked fix is:
+
+1. **Add `extract_declarations`**, a deterministic capability between `adapt_graph` and
+   `propose_boundaries`, emitting `CONFIG_KEY` from `.env*`/YAML/TOML/INI, `DATA_ENTITY`/`DATA_FIELD`/
+   `DATA_INDEX` from DDL, migrations and ORM models, and integration facts from dependency
+   manifests. No model call, no tree-sitter. This turns on three subsystems that already exist.
+   Start with `CONFIG_KEY` alone — smallest parser, and the sole evidence class for the most
+   conspicuous gap.
+2. **Attach `depends_on` to packets** from `EXTERNAL_SYMBOL`, without making those nodes walkable.
+3. **Add a residual clustering pass** so every meaningful node reaches some packet, using the 80% of
+   the packet budget currently going unspent (Q109).
+4. **Make completeness a gate.** Per requirement family, in `final_check`: was anything produced,
+   and if not, was it because no evidence existed or because no extractor can produce that
+   evidence? That distinction is what would have surfaced all of the above on run 1 instead of run
+   20.
+
+One line is worth checking before any of it, because it is nearly free: `pack.yaml:277` tells the
+synthesis worker *"set `requirement_type` — `functional` or `business_rule`, **the two tiers
+available to you here**"*, while the same prompt asks for seven further families and states that
+this field *"is what gets published."* A model obeying that sentence literally cannot emit anything
+else — which matches the 19/20 vs 0/20 split almost exactly. It is unlikely to be the whole cause,
+given the evidence starvation described above, but it is thirty minutes to rule in or out.
 
 ---
 

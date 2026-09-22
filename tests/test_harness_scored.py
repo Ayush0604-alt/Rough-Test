@@ -196,13 +196,21 @@ def test_a_language_the_corpus_never_contained_is_extracted_at_all() -> None:
     as top-level DSL calls rather than named definitions, plus a SQL schema and a README.
 
     What used to carry it was a set of artifact adapters that read the schema, the configuration
-    and the documentation into `DATA_ENTITY` and `DOMAIN_POLICY` nodes. Those adapters are gone
-    with the swap, and Graphify keys on `class` / `def` / `func` declarations — of which this file
-    has none. So the graph is now the two files, the tables in the schema, and nothing else.
+    and the documentation into `DATA_ENTITY` and `DOMAIN_POLICY` nodes. Those adapters went with
+    the swap, and Graphify keys on `class` / `def` / `func` declarations — of which this file has
+    none — so for a while the graph here was two files, the tables in the schema, and nothing else.
+    The previous version of this test pinned that loss and said in as many words that it "should be
+    rewritten to assert the requirement that is now producible" once the limitation lifted.
 
-    The gate must still accept it rather than halting, and every location it does produce must
-    still resolve. What it must not do is pretend: no boundary is found, so no requirement can be
-    grounded, and that is the state this test pins so an improvement is visible when it lands.
+    `extract_declarations` lifts it. The declarations are read straight off the lines that state
+    them, so this repository now yields its configured limits, its tables and columns, and the
+    vocabulary its schema fixes — none of which needs a single `def`.
+
+    **The other half of the loss is still real and still pinned below.** Graphify finds no
+    interaction boundary in top-level DSL calls, so the four Sinatra routes remain invisible: the
+    clusters here are declaration clusters led by a FILE, not boundaries. A functional requirement
+    still cannot be grounded in this repository. That is the next thing an improvement should move,
+    and this test will say so when it does.
     """
     graph, clusters, gate, resolved, located = _run_new_stack()
 
@@ -212,13 +220,31 @@ def test_a_language_the_corpus_never_contained_is_extracted_at_all() -> None:
     kinds = {entity.kind for entity in graph.entities}
     assert "FILE" in kinds, f"nothing at all was extracted: {sorted(kinds)}"
 
-    # The two losses, recorded rather than hidden. Declaration-style code yields no definition,
-    # and no adapter reads a schema or a configuration file into a policy node any more.
-    assert not clusters, (
-        "a boundary was found in a DSL-only repository — the recorded limitation no longer holds "
-        "and this test should be rewritten to assert the requirement that is now producible"
+    # What is recovered: declared policy, read without needing any definition to key on.
+    assert {"CONFIG_KEY", "DATA_ENTITY", "DATA_FIELD", "DOMAIN_POLICY"} <= kinds, (
+        f"declared policy no longer reaches the graph of a DSL-only repository: {sorted(kinds)}"
     )
-    assert not {"DATA_ENTITY", "DOMAIN_POLICY"} & kinds
+    by_name = {entity.name: entity for entity in graph.entities}
+    # A configured limit, with its value — the evidence class a quality requirement rests on and
+    # the one this pipeline had no producer for at all.
+    assert by_name["max_items_per_borrower"].attributes["value"] == "3"
+    assert by_name["loan_period_days"].attributes["value"] == "14"
+    # A vocabulary the schema fixes. This is a business rule the business wrote down, and it is
+    # stronger evidence than any application code because the database enforces it regardless.
+    policy = by_name["loans.state vocabulary"]
+    assert policy.attributes["allowed_values"] == ["open", "returned", "overdue"]
+    assert policy.attributes["rule_source"] == "schema_constraint"
+
+    # And it reaches a model rather than sitting in the graph: `declaration_groups` ranks files by
+    # how much each declares, which was uniformly zero until this producer existed.
+    assert clusters, "declared policy reached the graph but no evidence packet"
+    assert {cluster["boundary"] for cluster in clusters} == {"db/schema.sql", "config/limits.yml"}
+
+    # The half of the loss that remains. Every cluster here is led by a FILE, because no
+    # interaction boundary was found: a top-level `get "/loans"` is not a definition Graphify keys
+    # on, so the routes are still invisible and no functional requirement can be grounded.
+    assert {cluster["boundary_kind"] for cluster in clusters} == {"FILE"}
+    assert not {"ENDPOINT", "UI_ACTION", "CLI_ENTRY", "SCRIPT_ENTRY"} & kinds
 
 
 def test_the_sql_schema_in_a_held_out_repository_still_reaches_the_graph() -> None:

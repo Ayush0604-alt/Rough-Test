@@ -68,8 +68,12 @@ def _discover(fixture: str, **overrides):
             state["artifacts"][name] = store.save(name, value)
         return outcome
 
+    # Kept in step with `conftest.EXTRACTION_STEPS`. Three test files each maintain their own copy
+    # of this sequence and only `test_pack_compile` derives it from the manifest; until that is
+    # fixed, a step added to the extraction phase has to be added here by hand or this test
+    # quietly stops exercising the real pipeline.
     for step_id in (
-        "ingest", "graphify_extract", "adapt_graph",
+        "ingest", "graphify_extract", "adapt_graph", "extract_declarations",
         "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
     ):
         step(step_id)

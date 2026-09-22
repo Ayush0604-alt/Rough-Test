@@ -23,6 +23,11 @@ EXTRACTION_STEPS = (
     "ingest",
     "graphify_extract",
     "adapt_graph",
+    # Declared policy — config, schema and dependency manifests. Part of extraction rather than an
+    # optional extra: without it the graph carries no CONFIG_KEY or DATA_* node, which is the state
+    # that made `declaration_groups` rank every file at zero and seven requirement families
+    # unwritable.
+    "extract_declarations",
     "propose_boundaries",
     "classify_boundaries",
     "collect_boundary_assignments",

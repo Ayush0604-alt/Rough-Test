@@ -12,6 +12,7 @@ from agentic.schemas.testspec import RepairedTestCases, TestDesignFragment
 from agentic.schemas.brd import (
     BRDFragment,
     BRDItem,
+    ModuleAnalysis,
     ProductBRD,
     RepairedItems,
     TopTier,
@@ -22,6 +23,8 @@ SCHEMAS: dict[str, type[BaseModel]] = {
     "BRDFragment": BRDFragment,
     "ProductBRD": ProductBRD,
     "TopTier": TopTier,
+    # The altitude between one boundary and the whole product.
+    "ModuleAnalysis": ModuleAnalysis,
     "RepairedItems": RepairedItems,
     # Boundary classification, which replaced syntactic entry-point detection.
     "BoundaryAssignments": BoundaryAssignments,
