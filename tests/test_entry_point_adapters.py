@@ -70,7 +70,7 @@ def _discover(fixture: str, **overrides):
 
     for step_id in (
         "ingest", "graphify_extract", "adapt_graph",
-        "propose_boundaries", "classify_boundaries",
+        "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
     ):
         step(step_id)
     result = step("discover_entry_points")

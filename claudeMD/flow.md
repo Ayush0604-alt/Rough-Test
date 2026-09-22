@@ -395,18 +395,35 @@ Normalises Graphify's payload into the canonical `KnowledgeGraph`
   it is uncalled, **or** is registered (`REGISTERS`), **or** references undefined external names
   (decorators, annotations). It attaches shape evidence (inbound/outbound call counts, referenced
   names, registrars, container, call, and string literals within ±3 lines of the definition *and*
-  of each registration site). It sorts by references, then registrars, then out-degree, and **caps
-  at 120** (`MAX_CANDIDATES`).
-- **Out:** `boundary_candidates` {candidates, considered, truncated}
+  of each registration site). It sorts by references, then registrars, then out-degree.
+- No candidate is discarded any more (changed 2026-09-18; was a hard cap at 120,
+  `MAX_CANDIDATES`, that silently dropped everything past it). The ranked list is instead **chunked**
+  into batches of up to 120 (`MAX_CANDIDATES_PER_BATCH`) — one classification call per batch.
+- **Out:** `boundary_candidates` {candidates, considered} (the full, untruncated list — kept for
+  `discover_entry_points`'s registrar lookup) and `boundary_candidate_batches` (a plain list of
+  `{batch_id, batch_count, considered, candidates}`, one item per batch, fanned out over below).
 
-#### Step 5 · `classify_boundaries` (LLM, schema `BoundaryAssignments`) · on_fail: halt (default)
+#### Step 5 · `classify_boundaries` (LLM, schema `BoundaryAssignments`, `fan_out: boundary_candidate_batches`)
 
-- **One model call** over all ≤120 candidates. It returns `{qualified_name, entry_class, identifier,
-  effect, rationale}`, where `entry_class` ∈ ENDPOINT, CLI_ENTRY, CLI_COMMAND, SCRIPT_ENTRY,
-  UI_ACTION, SCHEDULED_JOB, EVENT_CONSUMER, REGISTERED_ENTRY, NONE.
+- **One model call per batch**, dispatched in parallel the same way `synthesize` fans out over
+  `clusters` (§ Step 12). Each call sees only its own ≤120 candidates and returns
+  `{qualified_name, entry_class, identifier, effect, rationale}` per candidate it is confident
+  about, where `entry_class` ∈ ENDPOINT, CLI_ENTRY, CLI_COMMAND, SCRIPT_ENTRY, UI_ACTION,
+  SCHEDULED_JOB, EVENT_CONSUMER, REGISTERED_ENTRY, NONE.
 - The model never states a location. The next step resolves the name against the graph.
-- **This single call decides everything downstream.** If it returns 5 endpoints, the document can
-  only ever describe 5 workflows. See §13 for how much it varies.
+- Each worker's reply lands in the `boundary_fragments` state channel (a fan-out step never writes
+  `completed_steps` for its own id — every parallel worker runs the same node function, and none
+  of them is "the" completion). One batch failing no longer halts the run; it just contributes
+  nothing, exactly like a failed `synthesize` worker.
+- **Out (per worker):** one `BoundaryAssignments` reply appended to `boundary_fragments`.
+
+#### Step 5b · `collect_boundary_assignments` ([boundaries.py](../src/agentic/capabilities/boundaries.py)) · warn_and_continue
+
+- Reduces every batch worker's reply in `boundary_fragments` into the one flat list
+  `discover_entry_points` has always consumed. An unreadable batch reply (wrong shape) is dropped
+  and counted rather than guessed at.
+- **Out:** `boundary_assignments` {assignments: [...]} — same shape as before batching existed, so
+  nothing downstream needed to change.
 
 #### Step 6 · `discover_entry_points` ([entry_points.py](../src/agentic/capabilities/entry_points.py)) · warn_and_continue
 
@@ -695,20 +712,38 @@ Ordered by impact. **B** = defect with a concrete failure.
   `CHECK` / `ENUM`, ALL-CAPS constants, config keys from `.yaml/.toml/.env.example`, `raise`/`throw`
   sites). Until then, make `RULE_WITHOUT_POLICY` a warning, or exclude it from repair.
 
-### B3: The boundary classifier is a single point of failure and the main source of instability [verified]
+### B3: The boundary classifier is a single point of failure and the main source of instability [partially fixed 2026-09-18]
 
-- `classify_boundaries` is **one LLM call** over up to 120 candidates, and it has no `on_fail`, so
-  it defaults to **halt**. One timeout or schema failure kills the whole run.
-- Candidates are **truncated at 120** by a ranking heuristic ([boundaries.py:44](../src/agentic/capabilities/boundaries.py#L44)).
-  neuleap has ~1,980 candidates, so 94% are never shown to the model.
-- The reply has to list every candidate within an 8k-token output limit, so on large inputs the
-  model returns a fraction.
-- **Evidence:** the same repo (neuleap, 381 files) gave **5, 5, 5, 44, 95** endpoints across runs,
-  which produced **4 to 77** functional requirements. The run-to-run variance comes from this step,
-  not from synthesis.
-- **Fix:** batch candidates (e.g. 30 per call, as a fan-out), apply `_stratified` sampling (as
-  `improvements.md` §2.3 notes), set `on_fail: warn_and_continue`, and cache classifications by
-  candidate hash.
+- ~~`classify_boundaries` is **one LLM call** over up to 120 candidates, and it has no `on_fail`, so
+  it defaults to **halt**. One timeout or schema failure kills the whole run.~~ **Fixed.**
+  `classify_boundaries` is now `fan_out: boundary_candidate_batches`, one call per batch of ≤120
+  candidates, dispatched in parallel exactly like `synthesize`. A batch that fails contributes
+  nothing rather than halting the run (fan-out steps never halt on a worker failure — see
+  `make_llm_node` in [nodes.py](../src/agentic/graph/nodes.py)).
+- ~~Candidates are **truncated at 120** by a ranking heuristic
+  ([boundaries.py:44](../src/agentic/capabilities/boundaries.py#L44)). neuleap has ~1,980
+  candidates, so 94% are never shown to the model.~~ **Fixed.** Nothing is truncated any more; the
+  ranked list is chunked into batches instead (`MAX_CANDIDATES_PER_BATCH`, still 120 — now a batch
+  size, not a cap). neuleap's ~1,980 candidates would now cost ~17 batch calls instead of losing
+  ~1,860 of them outright. A new `collect_boundary_assignments` step reduces every batch's reply
+  back into the one flat `boundary_assignments` list `discover_entry_points` has always consumed, so
+  nothing downstream changed shape.
+- The reply still has to list every candidate in *its own batch* within the output limit — that
+  constraint moved from "the whole repository" to "120 candidates," which is what the cap was
+  originally sized against, but it is not eliminated for a single unusually large batch.
+- **Still open:** the run-to-run variance in *which* candidates get classified as which class is a
+  property of the model call itself, not just of truncation — batching removes the "94% never seen"
+  failure mode but does not by itself make repeated classification of the same candidate
+  deterministic. `_stratified` sampling and hash-based classification caching (below) remain
+  unimplemented.
+- **Evidence (pre-fix):** the same repo (neuleap, 381 files) gave **5, 5, 5, 44, 95** endpoints
+  across runs, which produced **4 to 77** functional requirements — see the annotated table in §13.
+- **Remaining fix ideas:** cache classifications by candidate content hash so a candidate whose
+  evidence hasn't changed between runs doesn't get re-classified (and re-vary) every time; consider
+  `_stratified` sampling *within* a batch's ordering if a future run shows batches near the tail
+  systematically scoring worse than batch 1 (no evidence of that yet — batches are filled in ranked
+  order, so the richest evidence is always in batch 1, not spread thin across all of them the way
+  `_stratified` spreads clusters).
 
 ### B4: Fan-out metrics and errors overwrite each other [verified]
 
@@ -719,6 +754,9 @@ Ordered by impact. **B** = defect with a concrete failure.
   workers, `metrics["synthesize"]` always ends as `{"fragments_produced": 1}`, and if 10 workers
   fail, **only one error message survives**.
 - So a partially failed fan-out (for example Azure 429s) looks almost clean in the UI.
+- `classify_boundaries` becoming a second fan-out step (B3, 2026-09-18) inherits this exact defect:
+  `metrics["classify_boundaries"]` will likewise collapse to whichever batch worker wrote last, and
+  a batch that fails silently loses its error alongside every other failed batch's.
 - **Fix:** give `metrics` an accumulating reducer for fan-out keys, or write errors as a list
   channel (like `fragments`).
 
@@ -899,6 +937,16 @@ Taken from `runs/*/artifacts` (12 requirements runs, 5 test runs).
 
 **Boundary classification → clusters → output**
 
+> **2026-09-18 update:** the `1988 → 120`-style rows below are exactly the failure mode
+> `propose_boundaries`/`classify_boundaries` batching now fixes. Candidates past the old 120 cap
+> were not "shown less" — they were discarded outright and never classified, so a repo like
+> `neuleap` (1988 candidates) had at most 120 ever considered for a boundary, no matter how many
+> real endpoints sat past that cut line. The candidate list is no longer truncated; it is now split
+> into batches of ≤120 and classified with one model call per batch (`boundary_candidate_batches`),
+> so every candidate gets a classification. A rerun of these repos would be expected to show
+> `considered → considered` (no arrow) and a batch count instead of a single "→ 120". This table is
+> left as-is below as the historical evidence for *why* the fix happened, not as current behaviour.
+
 | Run | Repo | Files | Candidates (considered → shown) | Classifier output | Clusters | Published FR / BizReq / BR |
 |---|---|---|---|---|---|---|
 | e1037dbd | neuleap | 381 | 1988 → 120 | 95 ENDPOINT, 18 NONE | 84 | **77** / 5 / 0 |
@@ -930,7 +978,10 @@ What this shows:
 ## 14. Test suite status
 
 Run with `.venv/Scripts/python.exe -m pytest -q` (the system Python has no pytest):
-**683 passed, 1 failed** (2026-09-18).
+**703 passed, 1 failed** (2026-09-18, after the B3 batching fix below; up from 683 passed, 1
+failed earlier the same day — the delta is new coverage for `propose_boundary_candidates`'s
+batching, `collect_boundary_assignments`, and the `classify_boundaries` fan-out, not a change in
+what was already passing).
 
 ```
 FAILED tests/test_entry_point_adapters.py::test_registered_handlers_become_entry_points
@@ -938,9 +989,11 @@ FAILED tests/test_entry_point_adapters.py::test_registered_handlers_become_entry
 E   assert 4 == 3
 ```
 
-The `py_worker` fixture now yields **4** entry points where the test expects 3. Either the adapter
-or classifier stub started picking up an extra handler, or the fixture grew one. This is the same
-area as B1 (worker / registered-handler boundaries), so settle it together with the
+The `py_worker` fixture now yields **4** entry points where the test expects 3. This failure is
+**unrelated to the B3 batching change** — confirmed by stashing every batching-related file and
+rerunning this one test against the unmodified baseline, where it fails identically. Either the
+adapter or classifier stub started picking up an extra handler, or the fixture grew one. This is
+the same area as B1 (worker / registered-handler boundaries), so settle it together with the
 `BOUNDARY_KINDS` fix rather than simply bumping the expected number.
 
 The suite otherwise passes. It does **not** catch B1, B2, B4, B5 or B6. Each of those is a

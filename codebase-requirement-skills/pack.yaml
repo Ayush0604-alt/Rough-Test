@@ -61,10 +61,11 @@ steps:
     mode: deterministic
     capability: propose_boundary_candidates
     consumes: [graph]
-    produces: [boundary_candidates]
+    produces: [boundary_candidates, boundary_candidate_batches]
     on_fail: halt
 
-  # Phase 1d — Name the boundaries. The one model call in the extraction phase, and the price of
+  # Phase 1d — Name the boundaries. One model call per batch of up to MAX_CANDIDATES_PER_BATCH
+  # candidates, fanned out the same way `synthesize` fans out over clusters, and the price of
   # language independence: syntactic detection worked for one language, this works for any. The
   # model classifies a node; it never states a location, so a wrong answer costs a mislabelled
   # boundary rather than a fabricated citation.
@@ -72,9 +73,9 @@ steps:
     skill: graphify-knowledge-graph-extraction
     section: "Classifying a boundary candidate"
     mode: llm
+    fan_out: boundary_candidate_batches
     output_schema: BoundaryAssignments
-    consumes: [boundary_candidates]
-    produces: [boundary_assignments]
+    produces: [boundary_fragments]      # a shared state channel, not a file: many workers write at once
     instructions: |-
       Classify each candidate below. Return one assignment per candidate you are confident about,
       and `NONE` for the rest.
@@ -85,6 +86,17 @@ steps:
 
       Copy `qualified_name` exactly as given. Leave `identifier` null unless the evidence shows a
       literal route, command, or label.
+
+  # Phase 1d(ii) — reduce every batch's reply into the one flat list `discover_entry_points` has
+  # always consumed, so nothing downstream needs to know classification now costs more than one
+  # call.
+  - id: collect_boundary_assignments
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: collect_boundary_assignments
+    consumes: [boundary_fragments]
+    produces: [boundary_assignments]
+    on_fail: warn_and_continue
 
   # Phase 1e — Entry points contributed by registered adapters, and the coverage report that makes
   # a missing paradigm visible. The classifier's answers arrive here as one adapter among any

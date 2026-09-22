@@ -59,6 +59,13 @@ class AgentState(TypedDict, total=False):
     # Fan-out results. Each parallel worker appends one entry; the reduce step consumes them.
     fragments: Annotated[list[dict[str, Any]], operator.add]
 
+    # A second, differently-shaped fan-out channel: one entry per `classify_boundaries` batch
+    # worker. Kept separate from `fragments` rather than sharing it, because `fragments` already has
+    # a consumer (`assemble_requirements`) that reads the *whole* channel and treats every entry as
+    # a `BRDFragment` — mixing a `BoundaryAssignments` reply into that channel would either corrupt
+    # its counts or hide silently behind permissive validation, neither of which is `attributable`.
+    boundary_fragments: Annotated[list[dict[str, Any]], operator.add]
+
     # Set per-branch by the fan-out dispatcher. Read by a worker, never written back, so parallel
     # branches cannot conflict over it.
     work_item: dict[str, Any] | None
@@ -93,6 +100,7 @@ def initial_state(
         step_records=[],
         metrics={},
         fragments=[],
+        boundary_fragments=[],
         gate_reports={},
         repair_attempts=0,
         status="running",

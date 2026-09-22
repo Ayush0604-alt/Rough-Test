@@ -286,23 +286,38 @@ system.
 
 **Effort:** M. **Impact:** High, and it is the prerequisite for meaningful UI test cases.
 
-### 2.3 — The boundary-candidate cap has the categorical-truncation bug that `_stratified` already fixed
+### 2.3 — [RESOLVED 2026-09-18] The boundary-candidate cap had the categorical-truncation bug that `_stratified` already fixed
 
-**Evidence.** `boundaries.py` sorts candidates by
-`(-len(references), -len(registrars), -outbound_calls, qualified_name)` and takes the first
-`MAX_CANDIDATES = 120`. Where many candidates share a shape, the first three keys tie and the
-ordering collapses to the **alphabetical tiebreak** — the exact condition that caused
+**Original evidence.** `boundaries.py` sorted candidates by
+`(-len(references), -len(registrars), -outbound_calls, qualified_name)` and took the first
+`MAX_CANDIDATES = 120`. Where many candidates shared a shape, the first three keys tied and the
+ordering collapsed to the **alphabetical tiebreak** — the exact condition that caused
 `graph_ops._stratified` to be written, after 147 state-changing endpoints were dropped because they
 sorted after the reads.
 
-Worse, the reporting is asymmetric: `plan_clusters` reports every class **starved** and **thinned**;
-`propose_boundary_candidates` reports only a boolean `truncated` and a total.
+Worse, the reporting was asymmetric: `plan_clusters` reported every class **starved** and
+**thinned**; `propose_boundary_candidates` reported only a boolean `truncated` and a total.
 
-**What to change.** Reuse the stratifier. Group candidates by a cheap class key (entity kind + top
-directory, or the module they sit in), allocate proportionally with a floor of one per class, and
-report which classes were thinned — exactly as the cluster planner does.
+**What changed, instead of what was proposed here.** Rather than reusing `_stratified` to pick a
+*better* 120 to keep, the cap was turned into a batch size: `propose_boundary_candidates` no longer
+discards anything — it chunks the full ranked list into batches of `MAX_CANDIDATES_PER_BATCH` (still
+120) and `classify_boundaries` fans out one model call per batch (`collect_boundary_assignments`
+reduces the replies back into one list). This is a stronger fix for the categorical-truncation
+failure mode specifically: a candidate that used to lose the alphabetical tiebreak and get dropped
+now still gets classified, in whichever batch it landed in, rather than needing a *better* selection
+of which 120 to keep. See `flow.md` §10 B3 and `changes/batch_boundary_classification.md`.
 
-**Effort:** S (the algorithm already exists). **Impact:** Medium–high on large repositories.
+**What is still open.** The ranking now only decides batch *order*, not survival, so the categorical
+skew this section worried about no longer causes data loss — but it still means batch 1 is
+consistently richer in evidence than the last batch, which matters only if a run is cut short (a
+batch failing, `on_fail` mid-run) or if per-batch classification quality degrades for later batches
+in some way not yet measured. If that turns out to matter in practice, `_stratified`-style
+allocation *within* the batching (interleaving classes across batches rather than filling batch 1
+first) is still a reasonable follow-up — just no longer an urgent one, since the failure mode that
+motivated this section (data loss) is gone.
+
+**Effort:** done. **Impact:** the categorical-truncation bug itself is eliminated; the
+finer-grained batch-ordering question above is now speculative rather than evidenced.
 
 ### 2.4 — Derive `graph_path` from evidence instead of deleting the claim
 
@@ -565,7 +580,8 @@ hierarchy) → `3.3` (entailment chunking).
 *Expect business rules, data requirements and observations to appear for the first time.*
 
 **Week 4–5 — coverage.**
-`2.1` (OpenAPI adapter) → `2.3` (candidate stratification) → `2.2` (JS/TS adapter).
+`2.1` (OpenAPI adapter) → ~~`2.3` (candidate stratification)~~ *(resolved 2026-09-18 by batching
+instead — see 2.3)* → `2.2` (JS/TS adapter).
 *This is where a UI-oriented product gets its real input.*
 
 **Week 6 — the test side.**

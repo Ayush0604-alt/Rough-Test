@@ -19,8 +19,12 @@ import pytest
 from agentic.capabilities.graphify import (
     RELATION_MAP,
     AdapterError,
+    _attach_docstring,
+    _clean_rationale_text,
     _derive_line_ends,
+    _index_rationale_sources,
     _parse_location,
+    _read_rationale,
     adapt_graphify_graph,
     classify_kind,
     safe_file_outline,
@@ -530,3 +534,240 @@ def test_every_entity_location_resolves_and_every_symbol_verifies(tmp_path: Path
     for entity in located:
         check = verify_location(entity.location, root)
         assert check.ok, f"{entity.kind} {entity.qualified_name}: {check.message}"
+
+
+# --------------------------------------------------------------------------------------------
+# Docstring / rationale text — proposal §15
+# --------------------------------------------------------------------------------------------
+
+
+def test_python_triple_quote_docstring_is_read_in_full() -> None:
+    lines = [
+        'def helper():',
+        '    """First line of the docstring.',
+        '',
+        '    A second paragraph with more detail than Graphify\'s own truncated label carries.',
+        '    """',
+        '    return 1',
+    ]
+    text = _read_rationale(lines, 2)
+    assert "First line of the docstring." in text
+    assert "second paragraph" in text
+    assert '"""' not in text
+
+
+def test_jsdoc_block_comment_is_read_and_stars_are_stripped() -> None:
+    lines = [
+        "/**",
+        " * Registers the given handler for every route in the table.",
+        " * @param handler the callback to invoke",
+        " */",
+        "function register(handler) {}",
+    ]
+    text = _read_rationale(lines, 1)
+    assert "Registers the given handler" in text
+    assert "@param handler" in text
+    assert "*" not in _clean_rationale_text(text)
+
+
+def test_double_slash_comment_block_stops_at_the_first_non_comment_line() -> None:
+    lines = [
+        "// Persists the invoice and returns the stored reference.",
+        "// Callers must not assume the reference is sequential.",
+        "func Save(v Invoice) string {",
+    ]
+    text = _read_rationale(lines, 1)
+    assert "Persists the invoice" in text
+    assert "Callers must not assume" in text
+    assert "func Save" not in text
+
+
+def test_hash_comment_block_is_read_as_one_unit() -> None:
+    lines = [
+        "# Recomputes the daily settlement totals from the ledger.",
+        "# Safe to re-run; it is idempotent per business day.",
+        "def recompute():",
+    ]
+    text = _read_rationale(lines, 1)
+    assert "Recomputes the daily settlement totals" in text
+    assert "idempotent per business day" in text
+
+
+def test_a_single_line_docstring_opens_and_closes_on_the_same_line() -> None:
+    lines = ['def total():', '    """Sum of every line item."""', '    return 0']
+    assert _read_rationale(lines, 2) == "Sum of every line item."
+
+
+def test_an_unrecognised_shape_falls_back_to_the_graphify_label() -> None:
+    """The delimiter test's own note: never worse than today when the shape isn't recognised."""
+    rationale = {
+        "id": "r1",
+        "label": "Some prose Graphify already truncated to eighty characters or so…",
+        "file_type": "rationale",
+        "source_file": "a.py",
+        "source_location": "L5",
+    }
+    lines = ["not_a_comment_or_docstring_line = 1", "", "", "", "plain code here"]
+    result = _attach_docstring(Path("."), [rationale], {"a.py": lines})
+    assert result is not None
+    text, span = result
+    assert text == rationale["label"]
+    assert span == [5, 5]
+
+
+def test_secrets_inside_a_docstring_are_redacted() -> None:
+    text = _clean_rationale_text('Connects using api_key = sk-live-abcdef for the sandbox tenant.')
+    assert "sk-live-abcdef" not in text
+    assert "<redacted>" in text
+
+
+def test_a_licence_header_block_is_dropped_outright() -> None:
+    text = _clean_rationale_text(
+        "Copyright 2024 Example Corp.\nAll rights reserved.\nSPDX-License-Identifier: MIT"
+    )
+    assert text == ""
+
+
+def test_multiple_rationales_on_one_target_are_combined_in_line_order() -> None:
+    nodes_by_id = {
+        "doc": {
+            "id": "doc",
+            "label": "Handles the request.",
+            "file_type": "rationale",
+            "source_file": "a.py",
+            "source_location": "L1",
+        },
+        "why": {
+            "id": "why",
+            "label": "WHY: retried because upstream is flaky.",
+            "file_type": "rationale",
+            "source_file": "a.py",
+            "source_location": "L8",
+        },
+    }
+    edges = [
+        {"source": "doc", "target": "handler", "relation": "rationale_for"},
+        {"source": "why", "target": "handler", "relation": "rationale_for"},
+    ]
+    sources = _index_rationale_sources(nodes_by_id, edges)
+    assert [raw["id"] for raw in sources["handler"]] == ["doc", "why"]
+
+    lines = {
+        "a.py": [
+            '"""Handles the request."""',
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "# WHY: retried because upstream is flaky.",
+            "def handler(): ...",
+        ]
+    }
+    result = _attach_docstring(Path("."), sources["handler"], lines)
+    assert result is not None
+    text, span = result
+    assert "Handles the request." in text
+    assert "retried because upstream is flaky" in text
+    assert text.index("Handles the request.") < text.index("retried because upstream is flaky")
+    assert span == [1, 8]
+
+
+def test_the_module_docstring_reaches_the_file_entity_in_full(tmp_path: Path) -> None:
+    """The whole point: the full text, not Graphify's ~80-char truncated label."""
+    graph = _adapt(tmp_path, "sample_app")
+    main = next(
+        entity
+        for entity in graph.entities
+        if entity.kind == "FILE" and entity.location and entity.location.file.endswith("main.py")
+    )
+    docstring = main.attributes.get("docstring")
+    assert docstring is not None
+    assert "internal helper that nothing reachable from a boundary ever calls" in docstring
+    assert main.attributes.get("docstring_at") is not None
+
+
+def test_a_function_docstring_reaches_its_own_entity(tmp_path: Path) -> None:
+    graph = _adapt(tmp_path, "sample_app")
+    helper = next(
+        entity for entity in graph.entities if entity.name == "_unused_reconciliation_helper()"
+    )
+    docstring = helper.attributes.get("docstring")
+    assert docstring is not None
+    assert "sophisticated-looking internal processing" in docstring
+
+
+def test_docstrings_are_capped_at_the_configured_length(tmp_path: Path) -> None:
+    from agentic.capabilities.registry import CapabilityContext as _Ctx
+    from agentic.store import ArtifactStore
+
+    run_dir = tmp_path / "run"
+    (run_dir / "artifacts").mkdir(parents=True)
+    shutil.copytree(FIXTURES / "sample_app", run_dir / "source")
+
+    store = ArtifactStore(run_dir)
+    graph_path = run_dir / "graphify-graph.json"
+    graph_path.write_text(json.dumps(_payload("sample_app")), encoding="utf-8")
+
+    state: dict[str, Any] = {
+        "run_dir": str(run_dir),
+        "source_root": str(run_dir / "source"),
+        "artifacts": {},
+    }
+    from agentic.capabilities.ingest import build_inventory
+
+    inventory = build_inventory(run_dir / "source", "sample_app")
+    state["artifacts"]["inventory"] = store.save("inventory", inventory)
+    state["artifacts"]["graphify_raw"] = store.save(
+        "graphify_raw", {"graph_path": str(graph_path), "command": ["extract"]}
+    )
+
+    ctx = _Ctx(
+        state=state,  # type: ignore[arg-type]
+        step=_Step(),  # type: ignore[arg-type]
+        settings=Settings(runs_dir=tmp_path / "runs", docstring_max_chars=20),
+        store=store,
+        skill=None,  # type: ignore[arg-type]
+    )
+    graph = adapt_graphify_graph(ctx).artifacts["graph"]
+    helper = next(
+        entity for entity in graph.entities if entity.name == "_unused_reconciliation_helper()"
+    )
+    assert len(helper.attributes["docstring"]) <= 20
+
+
+def test_graph_docstrings_can_be_switched_off(tmp_path: Path) -> None:
+    from agentic.capabilities.registry import CapabilityContext as _Ctx
+    from agentic.store import ArtifactStore
+
+    run_dir = tmp_path / "run"
+    (run_dir / "artifacts").mkdir(parents=True)
+    shutil.copytree(FIXTURES / "sample_app", run_dir / "source")
+
+    store = ArtifactStore(run_dir)
+    graph_path = run_dir / "graphify-graph.json"
+    graph_path.write_text(json.dumps(_payload("sample_app")), encoding="utf-8")
+
+    state: dict[str, Any] = {
+        "run_dir": str(run_dir),
+        "source_root": str(run_dir / "source"),
+        "artifacts": {},
+    }
+    from agentic.capabilities.ingest import build_inventory
+
+    inventory = build_inventory(run_dir / "source", "sample_app")
+    state["artifacts"]["inventory"] = store.save("inventory", inventory)
+    state["artifacts"]["graphify_raw"] = store.save(
+        "graphify_raw", {"graph_path": str(graph_path), "command": ["extract"]}
+    )
+
+    ctx = _Ctx(
+        state=state,  # type: ignore[arg-type]
+        step=_Step(),  # type: ignore[arg-type]
+        settings=Settings(runs_dir=tmp_path / "runs", graph_docstrings=False),
+        store=store,
+        skill=None,  # type: ignore[arg-type]
+    )
+    graph = adapt_graphify_graph(ctx).artifacts["graph"]
+    assert all("docstring" not in entity.attributes for entity in graph.entities)

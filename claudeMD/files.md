@@ -323,14 +323,21 @@ planned because they sorted after the reads.
 
 **Significance:** change a bound here and you change both the bill and the coverage.
 
-### `boundaries.py` — 255 lines 🟠
+### `boundaries.py` — 323 lines 🟠
 Proposes boundary candidates from graph shape — primarily **in-degree zero on `CALLS`**, a shape that
 holds for every framework rather than a list of frameworks. Attaches the evidence a reader would use,
 including string literals within three lines of the definition *and of every registration site* —
 which is what lets a boundary be called `POST /orders` rather than the name of the function behind it.
+Also owns `collect_boundary_assignments`, the deterministic reduce step that merges every
+classification batch's reply back into one flat list (added 2026-09-18, see B3 in `flow.md`).
 
-**Significance:** the `MAX_CANDIDATES = 120` cap here has the same categorical-truncation bug that
-`_stratified` fixed in `graph_ops`, and reports far less about what it dropped.
+**Significance (fixed 2026-09-18):** ~~the `MAX_CANDIDATES = 120` cap here has the same
+categorical-truncation bug that `_stratified` fixed in `graph_ops`, and reports far less about what
+it dropped.~~ `MAX_CANDIDATES` is now `MAX_CANDIDATES_PER_BATCH`: the same value (120), but a batch
+size rather than a hard cap. Every candidate is classified — split across batches and fanned out to
+`classify_boundaries` one call per batch, the same mechanism `build_boundary_clusters` uses for
+`synthesize`. Nothing is silently dropped any more; see `flow.md` §10 B3 for the before/after and
+`changes/batch_boundary_classification.md` for the full diff.
 
 ### `entry_points.py` — 415 lines 🟠
 The adapter seam and the coverage report. `@entry_point_adapter` registers an adapter **and extends

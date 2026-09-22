@@ -24,8 +24,9 @@ claims at all.
 The four detectors that predated this seam lived inside the Python AST extractors and went with
 them when extraction moved to Graphify. Graphify emits structure, not intent — nothing in its
 output marks a route, a command, or a scheduled job — so the detection they did is now done by
-`ClassifiedBoundaryAdapter` below, from graph shape plus one model call. That adapter is
-language-agnostic by construction, which the four it replaced were not.
+`ClassifiedBoundaryAdapter` below, from graph shape plus one or more model calls, batched so a
+large repository costs several small calls rather than one that either overruns or silently drops
+candidates. That adapter is language-agnostic by construction, which the four it replaced were not.
 """
 
 from __future__ import annotations

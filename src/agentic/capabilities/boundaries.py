@@ -7,9 +7,11 @@ with a literal route, a `__main__` guard, a widget call. Graphify emits no such 
 signal has to come from graph *shape* instead, and the judgement from a model.
 
 This module owns the deterministic half: which nodes are worth asking about, and what evidence
-goes with each. The asking is a manifest `llm` step; the folding back into the graph is
-`ClassifiedBoundaryAdapter` in `entry_points`, so every boundary in the run is created in one
-place and counted by one coverage report.
+goes with each. The asking is a manifest `llm` step, fanned out one worker per batch of
+`MAX_CANDIDATES_PER_BATCH` candidates so a repository is never asked about in a single call with no
+fallback (see `collect_boundary_assignments` below, which reduces every batch's reply back into one
+flat list); the folding back into the graph is `ClassifiedBoundaryAdapter` in `entry_points`, so
+every boundary in the run is created in one place and counted by one coverage report.
 
 ## Why "nothing in this repository calls it" is the right primary signal
 
@@ -41,7 +43,15 @@ CANDIDATE_KINDS = {"FUNCTION", "METHOD", "CLASS", "MODULE_SURFACE"}
 
 # How many candidates one classification call is asked about. The reply is what overruns, not the
 # prompt: each assignment is a few short fields, so this is sized against the output ceiling.
-MAX_CANDIDATES = 120
+#
+# This used to be a hard cap on the whole candidate list — anything past it was simply discarded,
+# silently turning "more than 120 candidates" into "a real boundary that never gets classified,
+# never seeds a cluster, and never produces a requirement." It is now a *batch* size instead:
+# `propose_boundary_candidates` chunks the full, untruncated candidate list into groups of this
+# size, and `classify_boundaries` fans out one model call per batch (the same fan-out mechanism
+# `synthesize` uses per cluster), so a 300-candidate repository costs three calls rather than
+# losing 180 candidates to a cap sized for one.
+MAX_CANDIDATES_PER_BATCH = 120
 
 # Referenced names that say nothing about how a function is reached. Not a framework list — the
 # opposite: these are the language-level and container-level names that appear beside almost every
@@ -226,8 +236,10 @@ def propose_boundary_candidates(ctx: CapabilityContext) -> CapabilityResult:
         )
 
     # A candidate nothing calls but which calls a lot is a likelier entry point than a leaf, and a
-    # candidate carrying registration references is likelier still. Ordering by that keeps the
-    # most probable boundaries inside the cap.
+    # candidate carrying registration references is likelier still. Ordering by that no longer
+    # decides who gets discarded — every candidate below is classified, in some batch — but it
+    # still decides which batch a candidate lands in, so the richest evidence is what a partial or
+    # early-failing run gets through first.
     candidates.sort(
         key=lambda item: (
             -len(item["references_undefined_names"]),
@@ -236,20 +248,76 @@ def propose_boundary_candidates(ctx: CapabilityContext) -> CapabilityResult:
             item["qualified_name"],
         )
     )
-    truncated = len(candidates) > MAX_CANDIDATES
+
+    batch_count = -(-len(candidates) // MAX_CANDIDATES_PER_BATCH) if candidates else 0
+    batches: list[dict[str, Any]] = [
+        {
+            "batch_id": index + 1,
+            "batch_count": batch_count,
+            "considered": len(candidates),
+            "candidates": candidates[
+                index * MAX_CANDIDATES_PER_BATCH : (index + 1) * MAX_CANDIDATES_PER_BATCH
+            ],
+        }
+        for index in range(batch_count)
+    ]
 
     return CapabilityResult(
         artifacts={
             "boundary_candidates": {
-                "candidates": candidates[:MAX_CANDIDATES],
+                "candidates": candidates,
                 "considered": len(candidates),
-                "truncated": truncated,
-            }
+            },
+            # A plain top-level list, not a dict: `classify_boundaries` fans out over this by
+            # dispatching one worker per item, the same way `build_boundary_clusters` does for
+            # `clusters`.
+            "boundary_candidate_batches": batches,
         },
-        metrics={"candidates": min(len(candidates), MAX_CANDIDATES), "truncated": truncated},
+        metrics={"candidates": len(candidates), "batches": batch_count},
         messages=(
-            [f"{len(candidates)} boundary candidates, capped at {MAX_CANDIDATES}"]
-            if truncated
+            [
+                f"{len(candidates)} boundary candidates split into {batch_count} classification "
+                f"batches of up to {MAX_CANDIDATES_PER_BATCH}."
+            ]
+            if batch_count > 1
             else []
         ),
+    )
+
+
+@capability("collect_boundary_assignments")
+def collect_boundary_assignments(ctx: CapabilityContext) -> CapabilityResult:
+    """Reduce every classification batch's reply into the flat shape `discover_entry_points` reads.
+
+    `classify_boundaries` fans out one worker per batch, and each worker's `BoundaryAssignments`
+    reply lands in the shared `boundary_fragments` state channel rather than a file, since many
+    workers write at once. Nothing else reduces that channel — this is where it happens, in the
+    same place `discover_entry_points` has always looked for `boundary_assignments`, so nothing
+    downstream needs to know classification now costs more than one call.
+    """
+    fragments = ctx.state.get("boundary_fragments") or []
+    assignments: list[dict[str, Any]] = []
+    unreadable = 0
+    for payload in fragments:
+        found = payload.get("assignments")
+        if not isinstance(found, list):
+            unreadable += 1
+            continue
+        assignments.extend(item for item in found if isinstance(item, dict))
+
+    messages: list[str] = []
+    if unreadable:
+        messages.append(
+            f"{unreadable} boundary-classification batch reply/replies could not be read and "
+            "were dropped rather than guessed at."
+        )
+
+    return CapabilityResult(
+        artifacts={"boundary_assignments": {"assignments": assignments}},
+        metrics={
+            "boundary_assignments": len(assignments),
+            "batches_received": len(fragments),
+            "unreadable_batches": unreadable,
+        },
+        messages=messages,
     )

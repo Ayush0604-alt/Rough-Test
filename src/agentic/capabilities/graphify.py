@@ -234,6 +234,196 @@ def _verifiable_symbol(kind: str, label: str) -> str | None:
     return candidate
 
 
+# --------------------------------------------------------------------------------------------
+# Docstring / rationale text — attaching full intent text to the entity it describes
+# --------------------------------------------------------------------------------------------
+#
+# Graphify emits every docstring and marked comment as its own RATIONALE node, cut to ~80
+# characters, joined to the entity it describes by a `rationale_for` edge that no workflow walk
+# follows (it maps to EXPLAINS, not a `WORKFLOW_EDGE_KINDS` member). The entity itself gets no
+# `docstring` attribute, so the developers' own stated intent never reaches an evidence packet —
+# see graphify.md §15. This block reads the *full* text back from source and attaches it to the
+# entity, so `compact_entity` and `correspondence.vocabulary()` — both of which already look for
+# `docstring` — start finding it.
+
+# CLASS/FILE prose earns twice the FUNCTION/METHOD budget. `compact_entity` already bounds all
+# prose at 1200 characters; the default 600 doubled lands exactly there.
+_DOCSTRING_ATTACHED_KINDS = {"FUNCTION", "METHOD", "CLASS", "FILE"}
+
+
+def _docstring_limit(kind: str, base: int) -> int:
+    return base * 2 if kind in {"CLASS", "FILE"} else base
+
+
+_LICENSE_HEADER = re.compile(r"(?i)^(copyright\b|spdx-license-identifier|licensed under)")
+
+# A block whose lines mostly end like source rather than prose — commented-out code slipping in
+# under a `#`/`//` run rather than an actual explanation.
+_CODE_LIKE_ENDING = re.compile(r"[;{}\)]\s*$")
+
+_PY_TRIPLE_QUOTE = re.compile(r"^[ \t]*[rRuUbBfF]{0,2}(\"\"\"|''')")
+_BLOCK_COMMENT_OPEN = re.compile(r"^[ \t]*/\*\*?")
+_LINE_COMMENT_PREFIX = re.compile(r"^[ \t]*(#|//|--)[ \t]?")
+
+
+def _index_rationale_sources(
+    nodes_by_id: dict[str, dict[str, Any]], edges: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
+    """`target graphify id -> its RATIONALE raw nodes, in source-line order`.
+
+    A target can carry more than one — a docstring plus a `# WHY:` comment a few lines below it —
+    and order matters so they read the way the file does.
+    """
+    sources: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for edge in edges:
+        if str(edge.get("relation") or "").lower() != "rationale_for":
+            continue
+        target_id = str(edge.get("target") or "")
+        rationale = nodes_by_id.get(str(edge.get("source") or ""))
+        if rationale is None or not target_id:
+            continue
+        sources[target_id].append(rationale)
+    for items in sources.values():
+        items.sort(key=lambda raw: (_parse_location(raw) or ("", 0))[1] or 0)
+    return sources
+
+
+def _cached_lines(source_root: Path, relative: str, cache: dict[str, list[str]]) -> list[str]:
+    if relative not in cache:
+        try:
+            cache[relative] = (source_root / relative).read_text(
+                encoding="utf-8-sig", errors="ignore"
+            ).splitlines()
+        except OSError:
+            cache[relative] = []
+    return cache[relative]
+
+
+def _read_rationale(lines: list[str], start_line: int) -> str:
+    """The full text of a docstring or comment block, read forward from its first line.
+
+    Graphify gives only the first line; the delimiter on that line says how far the block really
+    runs — reading the RATIONALE node's own derived span instead would be wrong, since that span
+    is bounded at the *next structural node*, not at the block's own closing delimiter (a
+    function's docstring span would run through the whole function body).
+
+    Returns "" when the first line's shape isn't one of the recognised delimiters, so the caller
+    can fall back to Graphify's own (already truncated) label — never worse than today.
+    """
+    index = start_line - 1
+    if index < 0 or index >= len(lines):
+        return ""
+    first = lines[index]
+
+    if triple := _PY_TRIPLE_QUOTE.match(first):
+        delimiter = triple.group(1)
+        after_open = first[triple.end() :]
+        if delimiter in after_open:
+            return after_open.split(delimiter, 1)[0]
+        collected = [after_open]
+        for text in lines[index + 1 :]:
+            if delimiter in text:
+                collected.append(text.split(delimiter, 1)[0])
+                break
+            collected.append(text)
+        return "\n".join(collected)
+
+    if opener := _BLOCK_COMMENT_OPEN.match(first):
+        remainder = first[opener.end() :]
+        if "*/" in remainder:
+            return remainder.split("*/", 1)[0].strip(" *")
+        collected = [remainder.strip(" *")]
+        for text in lines[index + 1 :]:
+            if "*/" in text:
+                collected.append(re.sub(r"^[ \t]*\*?", "", text.split("*/", 1)[0]).strip())
+                break
+            collected.append(re.sub(r"^[ \t]*\*?", "", text).strip())
+        return "\n".join(collected)
+
+    if marker := _LINE_COMMENT_PREFIX.match(first):
+        prefix = marker.group(1)
+        collected = [first[marker.end() :].rstrip()]
+        for text in lines[index + 1 :]:
+            following = _LINE_COMMENT_PREFIX.match(text)
+            if not following or following.group(1) != prefix:
+                break
+            collected.append(text[following.end() :].rstrip())
+        return "\n".join(collected)
+
+    return ""
+
+
+def _clean_rationale_text(text: str) -> str:
+    """Strip comment markers, redact secrets, and drop a block that turns out not to be prose.
+
+    A block whose first line is a licence/boilerplate header, or whose lines mostly end like
+    source rather than sentences (commented-out code caught by a `#`/`//` scan), is dropped
+    outright rather than partially cleaned — neither is the "developers' own words" this feature
+    exists to surface. Runs of blank lines collapse to a single paragraph break; other whitespace
+    collapses within a line, so a wrapped docstring reads as prose rather than source formatting.
+    """
+    lines = [line.strip() for line in text.splitlines()]
+    non_blank = [line for line in lines if line]
+    if not non_blank:
+        return ""
+    if _LICENSE_HEADER.match(non_blank[0]):
+        return ""
+    if len(non_blank) >= 2:
+        code_like = sum(1 for line in non_blank if _CODE_LIKE_ENDING.search(line))
+        if code_like > len(non_blank) / 2:
+            return ""
+
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if not line:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            continue
+        if secret := _SECRET.match(line):
+            line = secret.group(1) + "<redacted>"
+        current.append(line)
+    if current:
+        paragraphs.append(" ".join(current))
+    return "\n\n".join(paragraphs).strip()
+
+
+def _attach_docstring(
+    source_root: Path,
+    rationales: list[dict[str, Any]],
+    line_cache: dict[str, list[str]],
+) -> tuple[str, list[int]] | None:
+    """The cleaned, combined text of every rationale block that targets one entity.
+
+    Returns None when nothing usable survived reading and cleaning, so the caller writes no
+    `docstring` attribute at all rather than an empty string.
+    """
+    blocks: list[str] = []
+    starts: list[int] = []
+    ends: list[int] = []
+    for raw in rationales:
+        parsed = _parse_location(raw)
+        if parsed is None or parsed[1] is None:
+            continue
+        relative, start = parsed
+        text = _read_rationale(_cached_lines(source_root, relative, line_cache), start)
+        if text:
+            end = start + max(len(text.splitlines()), 1) - 1
+        else:
+            text = _display_name(raw, "RATIONALE")
+            end = start
+        cleaned = _clean_rationale_text(text)
+        if not cleaned:
+            continue
+        blocks.append(cleaned)
+        starts.append(start)
+        ends.append(end)
+    if not blocks:
+        return None
+    return "\n\n".join(blocks), [min(starts), max(ends)]
+
+
 def _parse_location(raw: dict[str, Any]) -> tuple[str, int | None] | None:
     """`(file, start_line)` for a node or edge, or None when it cites nowhere.
 
@@ -686,6 +876,18 @@ def adapt_graphify_graph(ctx: CapabilityContext) -> CapabilityResult:
     line_ends = _derive_line_ends(nodes, edges, file_lines)
     language_of = {record.path: record.language for record in inventory.files}
 
+    # Docstring/comment text, attached to the entity it describes rather than left stranded on a
+    # RATIONALE node no workflow walk reaches. See graphify.md §15. `graph_docstrings` is the
+    # kill switch; off, this costs nothing extra since `doc_sources` is simply never consulted.
+    graph_docstrings = bool(getattr(ctx.settings, "graph_docstrings", True))
+    docstring_max_chars = int(getattr(ctx.settings, "docstring_max_chars", 600) or 600)
+    doc_sources = (
+        _index_rationale_sources({str(raw.get("id")): raw for raw in nodes}, edges)
+        if graph_docstrings
+        else {}
+    )
+    docstring_line_cache: dict[str, list[str]] = {}
+
     id_map: dict[str, str] = {}
     kind_counts: dict[str, int] = defaultdict(int)
     files_with_nodes: set[str] = set()
@@ -746,6 +948,14 @@ def adapt_graphify_graph(ctx: CapabilityContext) -> CapabilityResult:
         if kind == "FILE" and parsed is not None:
             if outline := safe_file_outline(ctx.source_root / parsed[0]):
                 attributes["content_outline"] = outline
+        if kind in _DOCSTRING_ATTACHED_KINDS and (rationales := doc_sources.get(external_id)):
+            if attached := _attach_docstring(ctx.source_root, rationales, docstring_line_cache):
+                text, span = attached
+                limit = _docstring_limit(kind, docstring_max_chars)
+                if len(text) > limit:
+                    text = text[: limit - 1].rstrip() + "…"
+                attributes["docstring"] = text
+                attributes["docstring_at"] = span
 
         id_map[external_id] = entity_id
         kind_counts[kind] += 1

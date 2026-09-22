@@ -25,6 +25,7 @@ EXTRACTION_STEPS = (
     "adapt_graph",
     "propose_boundaries",
     "classify_boundaries",
+    "collect_boundary_assignments",
     "discover_entry_points",
 )
 
@@ -102,9 +103,10 @@ _STUB_SCHEDULE = {"every", "schedule", "cron", "periodic", "interval"}
 def stub_boundary_assignments(candidates: list[dict]) -> dict:
     """Classify candidates the way the model is asked to, from the same evidence.
 
-    The suite runs the real pipeline with the model stubbed, so the one model call in the
-    extraction phase needs a deterministic stand-in or no test can reach a boundary — and without
-    boundaries, `plan_clusters` produces nothing and every downstream test is vacuous.
+    The suite runs the real pipeline with the model stubbed, so the model calls in the extraction
+    phase (one per batch of candidates, fanned out) need a deterministic stand-in or no test can
+    reach a boundary — and without boundaries, `plan_clusters` produces nothing and every
+    downstream test is vacuous.
 
     Reads only the fields the real prompt is given: the referenced-but-undefined names, the name
     itself, and the inbound call count.
@@ -207,10 +209,18 @@ def run_step_or_stub(spec, ctx):
             raise AssertionError(
                 f"No stub for llm step {spec.id!r}; this helper only covers the extraction phase"
             )
-        payload = ctx.store.load_json(ctx.state["artifacts"]["boundary_candidates"])
         from agentic.capabilities.registry import CapabilityResult
 
-        return CapabilityResult(
-            artifacts={"boundary_assignments": stub_boundary_assignments(payload["candidates"])}
+        # This helper runs one step at a time, standing in for LangGraph's real Send-based fan-out.
+        # `classify_boundaries` now dispatches one worker per batch, so the stand-in here classifies
+        # every batch and appends each reply to the same `boundary_fragments` state channel a real
+        # worker would — mutating `ctx.state` in place, since `_run` only persists `result.artifacts`
+        # and a fan-out step's output was never an artifact. The next step, the real
+        # `collect_boundary_assignments` capability, reduces that channel exactly as production does.
+        batches = ctx.store.load_json(ctx.state["artifacts"]["boundary_candidate_batches"])
+        ctx.state.setdefault("boundary_fragments", [])
+        ctx.state["boundary_fragments"].extend(
+            stub_boundary_assignments(batch.get("candidates") or []) for batch in batches
         )
+        return CapabilityResult(metrics={"fragments_produced": len(batches)})
     return get_capability(spec.capability)(ctx)

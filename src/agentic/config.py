@@ -29,6 +29,13 @@ class Settings(BaseSettings):
 
     graphify_timeout_seconds: int = 600
 
+    # Attach the full docstring/comment text Graphify finds to the entity it describes, instead of
+    # leaving it stranded on a separate RATIONALE node no workflow walk reaches. No LLM call, same
+    # result every run, every word traceable to a source line. See graphify.md §15.
+    graph_docstrings: bool = True
+    docstring_max_chars: int = 600
+    """Cap for a FUNCTION/METHOD docstring. CLASS and FILE get twice this."""
+
     # Azure OpenAI
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = Field(default="", repr=False)

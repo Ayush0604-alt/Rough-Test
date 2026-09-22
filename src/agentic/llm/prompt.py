@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from agentic.capabilities.graph_ops import GraphIndex
 from agentic.capabilities.registry import CapabilityContext
 from agentic.schemas.core import GateReport, KnowledgeGraph, Severity
 
@@ -26,6 +27,11 @@ MAX_REPAIR_CASES = 12
 # long README from crowding out the graph evidence it is meant to contextualise.
 DOC_FILES = 4
 DOC_OUTLINE_LINES = 40
+
+# Module docstrings state intent too, and are otherwise never reached by a workflow walk — see
+# graphify.md §15. Capped separately from README/manifest documentation so the two lists add
+# together instead of one crowding the other out of `DOC_FILES`.
+MODULE_INTENT_FILES = 20
 
 
 def build_system_prompt(ctx: CapabilityContext) -> str:
@@ -78,6 +84,42 @@ def renders(name: str) -> Callable[[ArtifactRenderer], ArtifactRenderer]:
     return decorate
 
 
+# Per-fan-out-target rendering of the one work item a fan-out worker receives. Registering a name
+# here is optional: an unregistered `fan_out` target (currently `clusters` and testgen's own
+# `test_batches`) keeps rendering as a "cluster" packet, which is what both were shaped to look
+# like before this registry existed. A target only needs an entry when its work item is *not*
+# shaped that way — `boundary_candidate_batches` below is the first one that isn't.
+WorkItemRenderer = Callable[[dict[str, Any]], dict[str, Any]]
+_WORK_ITEM_RENDERERS: dict[str, WorkItemRenderer] = {}
+
+
+def renders_work_item(fan_out_name: str) -> Callable[[WorkItemRenderer], WorkItemRenderer]:
+    def decorate(fn: WorkItemRenderer) -> WorkItemRenderer:
+        _WORK_ITEM_RENDERERS[fan_out_name] = fn
+        return fn
+
+    return decorate
+
+
+@renders_work_item("boundary_candidate_batches")
+def _render_boundary_batch_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `classify_boundaries` worker's slice: a batch of candidates, not a cluster."""
+    return {
+        "candidates": work_item.get("candidates") or [],
+        "batch": {
+            "batch_id": work_item.get("batch_id"),
+            "batch_count": work_item.get("batch_count"),
+            "considered": work_item.get("considered"),
+        },
+        "note": (
+            "`inbound_calls` counts callers inside this repository only. Zero means nothing here "
+            "calls it — a framework, a runtime, or a person might, or it may simply be unused. "
+            "`references_undefined_names` are names the file uses but does not define, which is "
+            "where a decorator, annotation, or registration call appears."
+        ),
+    }
+
+
 @renders("graph")
 def _render_graph(ctx: CapabilityContext, name: str) -> Any:
     """A summary only.
@@ -104,6 +146,19 @@ def _render_graph(ctx: CapabilityContext, name: str) -> Any:
         if entity.kind == "FILE" and entity.attributes.get("content_outline")
     ][:DOC_FILES]
 
+    # Module-level docstrings, carried onto FILE entities by `adapt_graphify_graph` from a
+    # `rationale_for` edge. Ranked by graph degree rather than encountered order, so the modules
+    # most connected to the rest of the system win the capped slots rather than the first N found.
+    index = GraphIndex(graph)
+    module_intent = [
+        {"file": entity.qualified_name, "docstring": entity.attributes["docstring"]}
+        for entity in sorted(
+            (e for e in graph.entities if e.kind == "FILE" and e.attributes.get("docstring")),
+            key=lambda e: index.degree(e.id),
+            reverse=True,
+        )
+    ][:MODULE_INTENT_FILES]
+
     return {
         "repository_name": graph.repository_name,
         "entity_count": len(graph.entities),
@@ -112,32 +167,11 @@ def _render_graph(ctx: CapabilityContext, name: str) -> Any:
         "extraction_coverage": extraction.get("extraction_coverage"),
         "ui_surface": graph.metadata.get("ui_surface") or {},
         "declared_documentation": documentation,
+        "module_intent": module_intent,
         "note": (
             "Summary only. Detailed evidence is in the cluster packets. Declared documentation "
             "states intent and may establish purpose, but only a reachable code path confirms "
             "that a capability exists."
-        ),
-    }
-
-
-@renders("boundary_candidates")
-def _render_boundary_candidates(ctx: CapabilityContext, name: str) -> Any:
-    """The candidate list, passed through as-is.
-
-    It is already compact by construction — `propose_boundary_candidates` caps it and emits a
-    handful of scalar fields per candidate — and it is already the whole evidence for this step.
-    Summarising it further would remove the very signals the classification rests on.
-    """
-    payload = ctx.load(name)
-    return {
-        "candidates": payload.get("candidates") or [],
-        "considered": payload.get("considered"),
-        "truncated": payload.get("truncated"),
-        "note": (
-            "`inbound_calls` counts callers inside this repository only. Zero means nothing here "
-            "calls it — a framework, a runtime, or a person might, or it may simply be unused. "
-            "`references_undefined_names` are names the file uses but does not define, which is "
-            "where a decorator, annotation, or registration call appears."
         ),
     }
 
@@ -305,15 +339,19 @@ def build_user_payload(ctx: CapabilityContext) -> dict[str, Any]:
 
     work_item = ctx.payload.get("work_item")
     if work_item:
-        payload["cluster"] = {
-            "boundary": work_item.get("boundary"),
-            "boundary_kind": work_item.get("boundary_kind"),
-            "boundary_location": work_item.get("boundary_location"),
-            # Boundaries sharing one workflow are merged into a single packet. Naming them keeps
-            # the model from writing about the first one only and silently dropping the rest.
-            "also_exposed_by": work_item.get("also_exposed_by") or [],
-            "evidence": work_item.get("packet"),
-        }
+        renderer = _WORK_ITEM_RENDERERS.get(ctx.step.fan_out or "")
+        if renderer is not None:
+            payload.update(renderer(work_item))
+        else:
+            payload["cluster"] = {
+                "boundary": work_item.get("boundary"),
+                "boundary_kind": work_item.get("boundary_kind"),
+                "boundary_location": work_item.get("boundary_location"),
+                # Boundaries sharing one workflow are merged into a single packet. Naming them
+                # keeps the model from writing about the first one only and dropping the rest.
+                "also_exposed_by": work_item.get("also_exposed_by") or [],
+                "evidence": work_item.get("packet"),
+            }
 
     for name in ctx.step.consumes:
         # `fragments` is a state channel written by fan-out workers, not a file on disk.

@@ -136,11 +136,13 @@ class StubModel:
             )
         if name == "BoundaryAssignments":
             # Extraction now needs a model to say which nodes are interaction boundaries, so a
-            # run with no answer here has no boundaries, no clusters, and no fan-out at all.
+            # run with no answer here has no boundaries, no clusters, and no fan-out at all. One
+            # call per batch of candidates reaches here, exactly like `BRDFragment` below reaches
+            # here once per cluster.
             from agentic.schemas.boundaries import BoundaryAssignments
 
             payload = json.loads(messages[-1][1])
-            candidates = (payload.get("boundary_candidates") or {}).get("candidates") or []
+            candidates = payload.get("candidates") or []
             return BoundaryAssignments.model_validate(
                 stub_boundary_assignments(candidates)
             )
@@ -285,9 +287,12 @@ def test_happy_path_produces_every_deliverable(e2e) -> None:
     assert final["halt_reason"] is None
 
     completed = final["completed_steps"]
+    # `classify_boundaries` is a fan-out step now, like `synthesize`, so it never appends its own
+    # id to `completed_steps` — each parallel worker runs the same node function, and none of them
+    # is "the" completion. `collect_boundary_assignments` is the reduce step that follows it.
     assert completed[:8] == [
         "ingest", "graphify_extract", "adapt_graph", "propose_boundaries",
-        "classify_boundaries", "discover_entry_points", "gate_graph", "plan_clusters",
+        "collect_boundary_assignments", "discover_entry_points", "gate_graph", "plan_clusters",
     ]
     for step in ("digest_areas", "elevate", "assemble", "gate_requirements", "render"):
         assert step in completed, step
@@ -345,6 +350,31 @@ def test_fan_out_runs_one_worker_per_interaction_boundary(e2e) -> None:
         HANDLER_BOUNDARY, "GET /invoices/{reference}"
     }
     assert stub.calls.count("BRDFragment") == len(fragments)
+
+
+def test_boundary_classification_runs_one_worker_per_candidate_batch(e2e) -> None:
+    """The classification fan-out mirrors `synthesize`'s: one call per batch, one reply each.
+
+    The fixture app has far fewer candidates than `MAX_CANDIDATES_PER_BATCH`, so this run makes
+    exactly one batch and one `BoundaryAssignments` call — the property under test is that the
+    count of calls, batches, and reduced fragments all agree with each other, which is what would
+    break first if the fan-out and the reduce step ever fell out of step.
+    """
+    from agentic.store import ArtifactStore
+
+    final, stub, prepared = e2e()
+    store = ArtifactStore(prepared.run_dir)
+    batches = store.load_json(final["artifacts"]["boundary_candidate_batches"])
+    assert batches, "the sample app must yield at least one interaction boundary candidate"
+
+    assert stub.calls.count("BoundaryAssignments") == len(batches)
+    assert len(final["boundary_fragments"]) == len(batches)
+
+    assignments = store.load_json(final["artifacts"]["boundary_assignments"])
+    fragment_total = sum(
+        len(fragment.get("assignments") or []) for fragment in final["boundary_fragments"]
+    )
+    assert len(assignments["assignments"]) == fragment_total
 
 
 def test_gate_one_failure_halts_before_any_model_call(e2e, tmp_path, monkeypatch) -> None:

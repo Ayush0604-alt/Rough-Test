@@ -81,7 +81,13 @@ def _apply(
         }
 
     if result.fragment is not None:
-        update["fragments"] = [result.fragment]
+        # Which state channel a fan-out worker's reply joins. `fragments` is the default and the
+        # only channel that existed until a second fan-out phase (`classify_boundaries`) needed a
+        # channel of its own rather than mixing differently-shaped replies into one list — see
+        # `AgentState.boundary_fragments`. A step names its channel via `produces`, exactly as
+        # `synthesize` already declares `produces: [fragments]`.
+        channel = step.produces[0] if step.produces else "fragments"
+        update[channel] = [result.fragment]
 
     if result.gate is not None:
         update["gate_reports"] = {step.id: result.gate.model_dump(mode="json")}

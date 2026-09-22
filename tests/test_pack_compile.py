@@ -15,7 +15,8 @@ def test_pack_loads_and_resolves_every_reference(manifest: PackManifest) -> None
     assert manifest.pack == "codebase-requirements"
     assert [step.id for step in manifest.steps] == [
         "ingest", "graphify_extract", "adapt_graph",
-        "propose_boundaries", "classify_boundaries", "discover_entry_points",
+        "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
+        "discover_entry_points",
         "gate_graph", "plan_clusters",
         "synthesize", "cluster_candidates", "digest_areas", "elevate", "assemble",
         # Consolidation and resolution: the stage between synthesis and validation that decides

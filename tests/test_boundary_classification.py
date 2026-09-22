@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agentic.capabilities.boundaries import MAX_CANDIDATES, propose_boundary_candidates
+from agentic.capabilities.boundaries import (
+    MAX_CANDIDATES_PER_BATCH,
+    collect_boundary_assignments,
+    propose_boundary_candidates,
+)
 from agentic.capabilities.entry_points import (
     BOUNDARY_KINDS,
     ClassifiedBoundaryAdapter,
@@ -57,7 +61,7 @@ def _graph(entities: list[Entity], relationships: list[Relationship]) -> Knowled
     return KnowledgeGraph(repository_name="t", entities=entities, relationships=relationships)
 
 
-def _propose(tmp_path: Path, graph: KnowledgeGraph) -> dict[str, Any]:
+def _propose_result(tmp_path: Path, graph: KnowledgeGraph):
     run_dir = tmp_path / "run"
     (run_dir / "artifacts").mkdir(parents=True)
     (run_dir / "source").mkdir()
@@ -74,7 +78,15 @@ def _propose(tmp_path: Path, graph: KnowledgeGraph) -> dict[str, Any]:
         store=store,
         skill=None,  # type: ignore[arg-type]
     )
-    return propose_boundary_candidates(ctx).artifacts["boundary_candidates"]
+    return propose_boundary_candidates(ctx)
+
+
+def _propose(tmp_path: Path, graph: KnowledgeGraph) -> dict[str, Any]:
+    return _propose_result(tmp_path, graph).artifacts["boundary_candidates"]
+
+
+def _batches(tmp_path: Path, graph: KnowledgeGraph) -> list[dict[str, Any]]:
+    return _propose_result(tmp_path, graph).artifacts["boundary_candidate_batches"]
 
 
 # --------------------------------------------------------------------------------------------
@@ -156,21 +168,98 @@ def test_uninformative_references_are_filtered_out(tmp_path: Path) -> None:
     assert candidate["references_undefined_names"] == []
 
 
-def test_candidates_are_capped_and_the_truncation_is_reported(tmp_path: Path) -> None:
-    entities = [_entity(f"n{i}", f"fn{i}", line=i + 1) for i in range(MAX_CANDIDATES + 25)]
+def test_candidates_are_never_truncated_now_that_they_are_batched(tmp_path: Path) -> None:
+    """A candidate past the old cap used to be discarded outright, silently. It no longer is."""
+    entities = [_entity(f"n{i}", f"fn{i}", line=i + 1) for i in range(MAX_CANDIDATES_PER_BATCH + 25)]
     payload = _propose(tmp_path, _graph(entities, []))
-    assert len(payload["candidates"]) == MAX_CANDIDATES
-    assert payload["considered"] == MAX_CANDIDATES + 25
-    assert payload["truncated"] is True
+    assert len(payload["candidates"]) == MAX_CANDIDATES_PER_BATCH + 25
+    assert payload["considered"] == MAX_CANDIDATES_PER_BATCH + 25
 
 
-def test_registration_carrying_candidates_are_ranked_first(tmp_path: Path) -> None:
-    """The cap must not throw away the likeliest boundaries."""
-    entities = [_entity(f"n{i}", f"fn{i}", line=i + 1) for i in range(MAX_CANDIDATES + 5)]
+def test_candidates_are_split_into_batches_of_the_cap(tmp_path: Path) -> None:
+    entities = [_entity(f"n{i}", f"fn{i}", line=i + 1) for i in range(MAX_CANDIDATES_PER_BATCH + 25)]
+    batches = _batches(tmp_path, _graph(entities, []))
+    assert len(batches) == 2
+    assert len(batches[0]["candidates"]) == MAX_CANDIDATES_PER_BATCH
+    assert len(batches[1]["candidates"]) == 25
+    for batch in batches:
+        assert batch["batch_count"] == 2
+        assert batch["considered"] == MAX_CANDIDATES_PER_BATCH + 25
+    assert [batch["batch_id"] for batch in batches] == [1, 2]
+    # Every candidate is classified exactly once, split across batches rather than dropped.
+    seen = [item["qualified_name"] for batch in batches for item in batch["candidates"]]
+    assert len(seen) == len(set(seen)) == MAX_CANDIDATES_PER_BATCH + 25
+
+
+def test_a_small_candidate_list_is_a_single_batch(tmp_path: Path) -> None:
+    batches = _batches(tmp_path, _graph([_entity("h", "handler")], []))
+    assert len(batches) == 1
+    assert batches[0]["batch_count"] == 1
+
+
+def test_no_candidates_means_no_batches(tmp_path: Path) -> None:
+    """The fan-out router already skips dispatch on an empty list; this is what it sees."""
+    graph = _graph([Entity(id="x", kind="EXTERNAL_SYMBOL", name="os", qualified_name="os")], [])
+    assert _batches(tmp_path, graph) == []
+
+
+def test_registration_carrying_candidates_are_ranked_into_the_first_batch(tmp_path: Path) -> None:
+    """The batch boundary must not separate the likeliest boundaries from the ranking that finds them."""
+    entities = [_entity(f"n{i}", f"fn{i}", line=i + 1) for i in range(MAX_CANDIDATES_PER_BATCH + 5)]
     entities.append(Entity(id="get", kind="EXTERNAL_SYMBOL", name="get", qualified_name="get"))
     graph = _graph(entities, [_rel("n5", "get", "REFERENCES")])
-    payload = _propose(tmp_path, graph)
-    assert payload["candidates"][0]["qualified_name"] == "app.py::fn5"
+    result = _propose_result(tmp_path, graph)
+    assert result.artifacts["boundary_candidates"]["candidates"][0]["qualified_name"] == "app.py::fn5"
+    batches = result.artifacts["boundary_candidate_batches"]
+    assert batches[0]["candidates"][0]["qualified_name"] == "app.py::fn5"
+
+
+# --------------------------------------------------------------------------------------------
+# Reducing fan-out replies back into one flat list
+# --------------------------------------------------------------------------------------------
+
+
+def _collect(tmp_path: Path, fragments: list[dict[str, Any]]) -> dict[str, Any]:
+    run_dir = tmp_path / "run"
+    (run_dir / "artifacts").mkdir(parents=True)
+    store = ArtifactStore(run_dir)
+    state: dict[str, Any] = {
+        "run_dir": str(run_dir),
+        "artifacts": {},
+        "boundary_fragments": fragments,
+    }
+    ctx = CapabilityContext(
+        state=state,  # type: ignore[arg-type]
+        step=_Step(id="collect", capability="collect_boundary_assignments"),  # type: ignore[arg-type]
+        settings=Settings(runs_dir=tmp_path / "runs"),
+        store=store,
+        skill=None,  # type: ignore[arg-type]
+    )
+    return collect_boundary_assignments(ctx).artifacts["boundary_assignments"]
+
+
+def test_collect_merges_every_batchs_assignments(tmp_path: Path) -> None:
+    fragments = [
+        {"assignments": [{"qualified_name": "app.py::a", "entry_class": "ENDPOINT"}]},
+        {"assignments": [{"qualified_name": "app.py::b", "entry_class": "CLI_COMMAND"}]},
+    ]
+    merged = _collect(tmp_path, fragments)
+    names = {item["qualified_name"] for item in merged["assignments"]}
+    assert names == {"app.py::a", "app.py::b"}
+
+
+def test_collect_with_no_fragments_produces_an_empty_but_valid_payload(tmp_path: Path) -> None:
+    assert _collect(tmp_path, []) == {"assignments": []}
+
+
+def test_collect_drops_an_unreadable_batch_reply_rather_than_guessing(tmp_path: Path) -> None:
+    fragments = [
+        {"assignments": [{"qualified_name": "app.py::a", "entry_class": "ENDPOINT"}]},
+        {"assignments": "not a list"},
+        {"no_assignments_key": True},
+    ]
+    merged = _collect(tmp_path, fragments)
+    assert [item["qualified_name"] for item in merged["assignments"]] == ["app.py::a"]
 
 
 # --------------------------------------------------------------------------------------------

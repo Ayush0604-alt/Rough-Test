@@ -309,7 +309,9 @@ def compact_entity(entity: Entity) -> dict[str, Any]:
             "widget", "label", "help", "type", "placeholder", "accept_multiple_files",
             "max_chars", "triggered_outcomes",
         ),
-        "FILE": ("extension", "content_outline"),
+        # `docstring` here is a module-level docstring/header comment, carried onto the FILE entity
+        # by `adapt_graphify_graph` from a `rationale_for` edge — see graphify.md §15.
+        "FILE": ("extension", "content_outline", "docstring"),
         # A module docstring is where an author most often states, in prose, what a part of the
         # product is *for* and which cases it deliberately refuses. It was being dropped entirely:
         # the kind carried no keys at all, so the single richest statement of intent in a Python

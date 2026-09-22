@@ -33,7 +33,8 @@ After `graphify-knowledge-graph-extraction` has produced a graph, and before
    boundary (see below).
 
 **Never invent** intent, users, business value, or policy the graph does not establish. Documentation
-can suggest — only a reachable code path can confirm.
+can suggest — only a reachable code path can confirm. If a docstring and the code it sits beside
+disagree, trust the code and say so — the docstring may simply be stale.
 
 ## Interaction boundaries (what counts as "externally consumed")
 

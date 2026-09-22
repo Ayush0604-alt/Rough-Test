@@ -52,7 +52,9 @@ class StepSpec(BaseModel):
         default=None,
         description=(
             "Artifact holding a list of work items. When set, the step runs once per item in "
-            "parallel and each worker appends to `fragments`."
+            "parallel and each worker appends to the state channel named by this step's own "
+            "`produces` (conventionally `fragments`; a second fan-out phase in the same pack "
+            "names a channel of its own rather than sharing one shaped for a different reply)."
         ),
     )
     consumes: list[str] = Field(default_factory=list)
