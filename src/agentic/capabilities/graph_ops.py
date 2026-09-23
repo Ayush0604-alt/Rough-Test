@@ -43,8 +43,12 @@ BOUNDARY_KINDS = {"ENDPOINT", "CLI_ENTRY", "SCRIPT_ENTRY", "UI_ACTION", "SCHEDUL
 # producer for this whole family. Until then no step emitted any of these kinds at all, so the
 # ranking key below was uniformly zero and the sort collapsed to the file path — the exact defect
 # `_stratified` exists to correct, reintroduced by an empty set rather than by a bad comparator.
+# INSTRUCTION_ARTIFACT and INSTRUCTION_RULE are here because for an LLM-powered product the
+# instruction file *is* the behaviour, and a skill nothing loads still states policy — exactly the
+# case declaration clusters exist for.
 DECLARATION_KINDS = {
     "DOMAIN_POLICY", "DATA_ENTITY", "DATA_FIELD", "DATA_INDEX", "CONFIG_KEY", "EXTERNAL_SERVICE",
+    "INSTRUCTION_ARTIFACT", "INSTRUCTION_RULE",
 }
 
 # Edges worth following when reconstructing a workflow. Import and containment edges connect
@@ -56,6 +60,20 @@ WORKFLOW_EDGE_KINDS = {
     # registry — is invisible to workflow traversal, and every one of its handlers lands in no
     # evidence packet at all.
     "REGISTERS",
+    # THE GROUNDING DECISION FOR INSTRUCTION FILES. Including LOADS means a requirement may be
+    # grounded in a skill or prompt file *when traced code loads it*: the walk goes outward from a
+    # boundary, through the calls, to the loader, and then to what the loader loads.
+    #
+    # For an LLM-powered product this is the difference between describing the product and
+    # describing its plumbing — the refusals and limits live in the Markdown, and the code around
+    # it only opens a file and posts it to an API. Measured before this existed: on two stored runs
+    # the instruction files were in the graph with no content and no edges at all, including this
+    # project's own 54 skill files when it analysed itself.
+    #
+    # Excluding it is the defensible alternative and leaves such products undocumentable. Remove
+    # this one entry to reverse the decision; the artifacts stay in the graph and stay visible in
+    # declaration clusters, they simply stop being able to ground a claim on their own.
+    "LOADS",
 }
 
 # Nodes that add volume without adding meaning to an evidence packet.
@@ -332,6 +350,14 @@ def compact_entity(entity: Entity) -> dict[str, Any]:
         # A declared dependency is the only evidence a call graph carries that an external system
         # exists at all: the repository never defines it, so nothing in the graph points at it.
         "EXTERNAL_SERVICE": ("ecosystem", "declared_version", "source"),
+        # Structure, not flattened prose — the same treatment a schema gets. `sections` are the
+        # units of instruction the file's own author chose, short enough to carry whole.
+        "INSTRUCTION_ARTIFACT": (
+            "artifact_role", "declared_name", "description", "sections", "rule_count",
+        ),
+        # `modality` is load-bearing: "never" and "must" are declared prohibitions and
+        # obligations, which is what separates a rule from the prose around it.
+        "INSTRUCTION_RULE": ("rule_source", "modality", "statement", "section"),
     }
     # Prose that states intent earns a longer budget than an incidental attribute value. At 200
     # characters a module docstring is cut off mid-sentence, which is worse than useless: it reads

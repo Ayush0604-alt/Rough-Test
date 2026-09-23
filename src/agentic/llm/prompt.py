@@ -34,6 +34,29 @@ DOC_OUTLINE_LINES = 40
 MODULE_INTENT_FILES = 20
 
 
+# What a documentation file is worth to the step that writes the product purpose. A project's own
+# description of itself outranks its deployment recipe; an override file is a variant of a variant
+# and outranks nothing.
+_DOC_PRIORITY = (
+    (("readme",), 100),
+    (("architecture", "overview", "design", "spec"), 80),
+    (("contributing", "changelog"), 40),
+    (("package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml"), 30),
+    (("docker-compose",), 20),
+    (("dockerfile",), 15),
+    (("requirements",), 10),
+)
+
+
+def _documentation_rank(path: str) -> int:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    for names, weight in _DOC_PRIORITY:
+        if name.startswith(names) or name in names:
+            # An override or a variant states less than the file it overrides.
+            return weight - 5 if "override" in name else weight
+    return 0
+
+
 def build_system_prompt(ctx: CapabilityContext) -> str:
     """Master skill prose + step skill prose + any step-specific instruction."""
     manifest = ctx.payload.get("manifest")
@@ -139,6 +162,7 @@ def _render_module_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
         },
         "depends_on": work_item.get("depends_on") or [],
         "declared_policy": work_item.get("declared_policy") or [],
+        "instruction_rules": work_item.get("instruction_rules") or [],
         "evidence": work_item.get("packet"),
         "note": (
             "You are looking at one part of the product, above the level of any single boundary. "
@@ -170,13 +194,30 @@ def _render_graph(ctx: CapabilityContext, name: str) -> Any:
     # arrived anywhere a model could read it. The skill's evidence precedence puts declared
     # documentation first for *purpose* — while still requiring code to confirm any capability —
     # so the step that writes the purpose is exactly where it belongs.
+    # Ranked, not taken in encountered order.
+    #
+    # This list was `[... for entity in graph.entities ...][:DOC_FILES]` with no ordering at all.
+    # Entities are sorted by content-addressed id, so the four files that reached every prompt were
+    # chosen by *hash order* — deterministic and semantically arbitrary. On the reference run that
+    # spent three of four slots on `docker-compose.yml`, `docker-compose.override.yml` and a
+    # `Dockerfile`, with the README surviving by luck.
+    #
+    # The reasoning was already written down ten lines below, for `module_intent`: rank so the most
+    # informative files win the capped slots rather than the first N found. It was applied to one
+    # of two adjacent capped lists and not the other.
     documentation = [
         {
             "file": entity.qualified_name,
             "outline": (entity.attributes.get("content_outline") or [])[:DOC_OUTLINE_LINES],
         }
-        for entity in graph.entities
-        if entity.kind == "FILE" and entity.attributes.get("content_outline")
+        for entity in sorted(
+            (
+                entity
+                for entity in graph.entities
+                if entity.kind == "FILE" and entity.attributes.get("content_outline")
+            ),
+            key=lambda entity: (-_documentation_rank(entity.qualified_name), entity.qualified_name),
+        )
     ][:DOC_FILES]
 
     # Module-level docstrings, carried onto FILE entities by `adapt_graphify_graph` from a

@@ -292,8 +292,9 @@ def test_happy_path_produces_every_deliverable(e2e) -> None:
     # is "the" completion. `collect_boundary_assignments` is the reduce step that follows it.
     # `analyse_module` is a fan-out step too, so like `classify_boundaries` and `synthesize` it
     # never appends its own id — `collect_module_analyses` is its reduce step.
-    assert completed[:11] == [
+    assert completed[:12] == [
         "ingest", "graphify_extract", "adapt_graph", "extract_declarations",
+        "extract_instruction_artifacts",
         "propose_boundaries", "collect_boundary_assignments", "discover_entry_points",
         "gate_graph", "partition_modules", "plan_clusters", "collect_module_analyses",
     ]

@@ -74,6 +74,7 @@ def _discover(fixture: str, **overrides):
     # quietly stops exercising the real pipeline.
     for step_id in (
         "ingest", "graphify_extract", "adapt_graph", "extract_declarations",
+        "extract_instruction_artifacts",
         "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
     ):
         step(step_id)

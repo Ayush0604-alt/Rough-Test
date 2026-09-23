@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     # this off reproduces the previous graph exactly. Deterministic, no model call.
     declaration_extraction: bool = True
 
+    # Read skill, prompt and agent-configuration Markdown as structure rather than as a
+    # supporting outline, and connect each to the code that loads it.
+    #
+    # For an LLM-powered product the instruction file *is* the behaviour; the code around it opens
+    # a file and posts it to an API. The outline reader this bypasses for such files matched a
+    # hardcoded filename whitelist — only `readme*` among Markdown — so a SKILL.md returned nothing
+    # at all. Measured before it existed: this project analysing itself had 54 skill files in the
+    # graph with no content and no edges.
+    #
+    # Off reproduces the previous graph exactly.
+    instruction_artifacts: bool = True
+
     # The altitude between one interaction boundary and the whole product. One model call per
     # module, over a partition derived from workflow overlap between boundaries.
     #

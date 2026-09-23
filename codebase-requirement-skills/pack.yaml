@@ -69,6 +69,23 @@ steps:
     produces: [graph]
     on_fail: warn_and_continue
 
+  # Phase 1b(iii) — Instruction artifacts. For an LLM-powered product a skill or prompt file *is*
+  # the behaviour; the code around it opens the file and posts it to an API. The outline reader in
+  # the adapter matches a hardcoded filename whitelist whose only Markdown pattern is `readme*`, so
+  # a SKILL.md returned nothing at all: on two stored runs those files sat in the graph with no
+  # content and no edges, including this project's own 54 skill files when it analysed itself.
+  #
+  # This reads them as structure (declared name, description, section headings, declared rules) and
+  # emits a LOADS edge from the code that opens one — which is what lets a requirement trace from
+  # observed behaviour back to the instruction that causes it.
+  - id: extract_instruction_artifacts
+    skill: graphify-knowledge-graph-extraction
+    mode: deterministic
+    capability: extract_instruction_artifacts
+    consumes: [inventory, graph]
+    produces: [graph]
+    on_fail: warn_and_continue
+
   # Phase 1c — Propose interaction-boundary candidates from graph shape. Nothing in Graphify's
   # output marks a route or a command, so the signal is structural: a handler is invoked by a
   # framework, never by the code beside it, so nothing in this repository calls it.
@@ -371,6 +388,14 @@ steps:
       - `non_functional_requirements` — a quality property fixed concretely: a timeout, a size
         cap, a retry bound, a concurrency guard, an authorisation gate, a masked secret. Only
         where the evidence fixes something checkable; never a general aspiration.
+
+      An `INSTRUCTION_RULE` node is a declared rule from a skill, prompt or agent-configuration
+      file that this workflow loads — for a product whose behaviour is defined in such a file, it
+      is the rule itself rather than a description of one, and the code around it only delivers it
+      to a model. Treat it as a business rule and quote its statement. **Word it as declared
+      policy, not as guaranteed behaviour:** an instruction asks a model to comply, where a schema
+      constraint is enforced by the database whatever the code does. "The system is instructed to
+      refuse X" is honest; "the system refuses X" claims more than this evidence supports.
       - `reporting_requirements` — a view, export, listing, or summary someone reads, including
         any ordering or filtering the evidence fixes.
 

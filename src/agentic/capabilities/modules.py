@@ -54,6 +54,7 @@ from agentic.capabilities.graph_ops import (
     build_packets,
     external_dependencies,
 )
+from agentic.capabilities.instructions import instruction_rules_for
 from agentic.capabilities.registry import CapabilityContext, CapabilityResult, capability
 from agentic.schemas.core import Entity, KnowledgeGraph
 
@@ -314,6 +315,10 @@ def partition_modules(ctx: CapabilityContext) -> CapabilityResult:
                 "member_count": len(members),
                 "depends_on": external_dependencies(index, members),
                 "declared_policy": declarations[position],
+                # Rules from instruction files this module's own code loads. Scoped by the LOADS
+                # edge rather than shown to every module, for the same reason declarations are
+                # partitioned: a rule every module sees is a rule every module restates.
+                "instruction_rules": instruction_rules_for(graph, members),
                 "packet": packet,
             }
         )

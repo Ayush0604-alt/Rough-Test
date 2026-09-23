@@ -28,6 +28,10 @@ EXTRACTION_STEPS = (
     # that made `declaration_groups` rank every file at zero and seven requirement families
     # unwritable.
     "extract_declarations",
+    # Instruction artifacts — skill, prompt and agent-configuration Markdown. Part of extraction
+    # because for an LLM-powered product those files *are* the behaviour, and without this step
+    # they sit in the graph with no content and no edges.
+    "extract_instruction_artifacts",
     "propose_boundaries",
     "classify_boundaries",
     "collect_boundary_assignments",

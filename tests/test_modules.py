@@ -22,6 +22,7 @@ from agentic.capabilities.modules import (
 from agentic.schemas.core import Entity, KnowledgeGraph
 
 EXTRACTION = ("ingest", "graphify_extract", "adapt_graph", "extract_declarations",
+              "extract_instruction_artifacts",
               "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
               "discover_entry_points")
 

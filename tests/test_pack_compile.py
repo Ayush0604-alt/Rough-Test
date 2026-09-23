@@ -18,6 +18,9 @@ def test_pack_loads_and_resolves_every_reference(manifest: PackManifest) -> None
         # Declared policy — config, schema and dependency manifests, which a call graph cannot
         # carry and which six downstream consumers were already built to read.
         "extract_declarations",
+        # Skill, prompt and agent-configuration Markdown, read as structure and connected to the
+        # code that loads it.
+        "extract_instruction_artifacts",
         "propose_boundaries", "classify_boundaries", "collect_boundary_assignments",
         "discover_entry_points",
         "gate_graph",

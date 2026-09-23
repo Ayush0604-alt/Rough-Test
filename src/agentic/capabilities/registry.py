@@ -142,6 +142,7 @@ def load_builtin_capabilities() -> None:
         graphify,
         hedging,
         ingest,
+        instructions,
         leakage,
         modules,
         quarantine,
