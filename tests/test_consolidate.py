@@ -160,17 +160,12 @@ def test_the_same_capability_worded_differently_is_merged() -> None:
     assert result.metrics["duplicates_merged"] == 1
 
 
-def test_two_capabilities_named_by_different_verbs_are_kept_apart() -> None:
-    """A deliberate trade, and the safer side of it.
+def test_two_verbs_naming_one_operation_are_merged() -> None:
+    """Synonyms are one operation; the verb guard now compares operations, not words.
 
-    "Submit" and "lodge" are synonyms here and merging them would be right. Telling that pair
-    apart from "view" and "delete" needs to know what the words mean, and any list that encoded it
-    would be a list about English, or about one domain. So the rule is the blunt one: a difference
-    in the verb keeps two requirements apart.
-
-    The cost is a duplicate that survives, which a reviewer can see and merge. The alternative cost
-    was an entire CRUD surface collapsing into one requirement, which a reviewer cannot see at all
-    because the evidence for the others goes with them.
+    "Submit" and "lodge" used to be kept apart because telling them from "view" and "delete"
+    needed to know what the words mean. The action classes are that knowledge, stated once and
+    naming no domain: `submit` and `lodge` both *create*, so these two merge.
     """
     brd, result = _run(
         ProductBRD(
@@ -184,8 +179,31 @@ def test_two_capabilities_named_by_different_verbs_are_kept_apart() -> None:
             ]
         )
     )
+    assert len(brd.functional_requirements) == 1
+    assert result.metrics["duplicates_merged"] == 1
+
+
+def test_different_operations_on_the_same_code_are_kept_apart() -> None:
+    """The protection the verb guard exists for survives the synonym classes.
+
+    One handler can serve several operations, so identical evidence is not enough on its own:
+    "view" and "delete" are different classes and neither merge pass may cross that difference.
+    """
+    brd, result = _run(
+        ProductBRD(
+            functional_requirements=[
+                _item("View A Bill",
+                      "Staff shall be able to view a supplier bill so that the change is saved.",
+                      "external_capability"),
+                _item("Delete A Bill",
+                      "Staff shall be able to delete a supplier bill so that the change is saved.",
+                      "external_capability"),
+            ]
+        )
+    )
     assert len(brd.functional_requirements) == 2
     assert result.metrics["duplicates_merged"] == 0
+    assert result.metrics["identical_evidence_merged"] == 0
 
 
 def test_a_merge_keeps_the_fuller_wording_and_both_citations() -> None:

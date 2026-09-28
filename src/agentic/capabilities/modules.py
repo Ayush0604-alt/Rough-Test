@@ -463,11 +463,25 @@ def collect_module_analyses(ctx: CapabilityContext) -> CapabilityResult:
     fragments = ctx.state.get("module_fragments") or []
     analyses: list[dict[str, Any]] = []
     unreadable = 0
+    duplicates = 0
+    by_code: dict[str, dict[str, Any]] = {}
     for fragment in fragments:
         if not isinstance(fragment, dict) or not fragment.get("module_code"):
             unreadable += 1
             continue
-        analyses.append(fragment)
+        # One analysis per module. A fan-out wired straight behind another fan-out ran every
+        # module once per worker of the step before it -- 3,171 analyses of 21 modules on one
+        # run -- and the top tier was then shown the first module's copies and nothing else. The
+        # graph builder now puts a barrier between two fan-outs; this keeps the artifact right
+        # even if a pack ever dispatches a module twice. The fullest reply wins.
+        code = str(fragment["module_code"])
+        kept = by_code.get(code)
+        if kept is not None:
+            duplicates += 1
+            if _analysis_weight(fragment) <= _analysis_weight(kept):
+                continue
+        by_code[code] = fragment
+    analyses = list(by_code.values())
 
     analyses.sort(key=lambda item: str(item.get("module_code") or ""))
     names = {
@@ -500,9 +514,34 @@ def collect_module_analyses(ctx: CapabilityContext) -> CapabilityResult:
             f"{unreadable} module reply/replies could not be read and were dropped rather than "
             "guessed at."
         )
+    if duplicates:
+        messages.append(
+            f"{duplicates} repeated analysis/analyses of a module already analysed were dropped; "
+            "one analysis per module is kept."
+        )
 
     return CapabilityResult(
         artifacts={"module_analyses": {"analyses": analyses, "module_names": names}},
-        metrics={"module_analyses": len(analyses), "module_replies_unreadable": unreadable},
+        metrics={
+            "module_analyses": len(analyses),
+            "module_replies_unreadable": unreadable,
+            "module_replies_duplicated": duplicates,
+        },
         messages=messages,
+    )
+
+
+_ANALYSIS_SECTIONS = (
+    "module_capabilities",
+    "cross_cutting_rules",
+    "quality_properties",
+    "integration_points",
+    "data_invariants",
+)
+
+
+def _analysis_weight(fragment: dict[str, Any]) -> int:
+    """How much a module reply says, for choosing between two replies about one module."""
+    return sum(len(fragment.get(section) or []) for section in _ANALYSIS_SECTIONS) + int(
+        bool(fragment.get("module_purpose"))
     )

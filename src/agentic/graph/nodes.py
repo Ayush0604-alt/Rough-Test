@@ -18,6 +18,7 @@ from agentic.capabilities.registry import (
     get_capability,
 )
 from agentic.config import Settings
+from agentic.llm.usage import metered, summarise_usage
 from agentic.skills.pack import OnFail, PackManifest, StepMode, StepSpec
 from agentic.state import AgentState, StepRecord
 from agentic.store import ArtifactStore
@@ -40,14 +41,20 @@ def _context(
     )
 
 
+# Every model call a node makes is metered; see `agentic.llm.usage`. Kept under these names so the
+# node factories below read the same as before.
+_metered = metered
+
+
 def _record(
     step: StepSpec,
     ctx: CapabilityContext,
     status: str,
     started: float,
     messages: list[str],
+    usage: dict[str, Any] | None = None,
 ) -> StepRecord:
-    return StepRecord(
+    record = StepRecord(
         step=step.id,
         skill=step.skill,
         # The exact content hash of the skill that governed this step. A deliverable can therefore
@@ -59,6 +66,14 @@ def _record(
         duration_ms=round((perf_counter() - started) * 1000, 2),
         messages=messages,
     )
+    if usage and (usage.get("model_calls") or usage.get("failed_calls")):
+        record["model_calls"] = usage["model_calls"]
+        record["failed_calls"] = usage["failed_calls"]
+        record["input_tokens"] = usage["input_tokens"]
+        record["output_tokens"] = usage["output_tokens"]
+        record["cached_input_tokens"] = usage["cached_input_tokens"]
+        record["usage_by_model"] = usage["usage_by_model"]
+    return record
 
 
 def _apply(
@@ -107,14 +122,19 @@ def make_capability_node(
         started = perf_counter()
         ctx = _context(state, step, manifest, settings)
         fn = get_capability(step.capability or "")
+        # Deterministic steps can call a model too -- the correspondence check asks one whether a
+        # claim is entailed -- so they are metered like model steps.
+        usage: dict[str, Any] = {}
         try:
-            result = fn(ctx)
+            with _metered() as usage:
+                result = fn(ctx)
         except Exception as exc:
             # Without a record here the step list simply stops, and the UI shows the last
             # successful step as the final row without ever naming the one that broke.
             record = _record(
                 step, ctx, "failed", started,
                 [f"{type(exc).__name__}: {exc}", traceback.format_exc(limit=3)],
+                usage,
             )
             if step.on_fail is OnFail.WARN:
                 # The manifest says this step is optional. That has to hold when it raises, not
@@ -149,7 +169,7 @@ def make_capability_node(
         messages = list(result.messages)
         if result.gate is not None:
             messages.extend(result.gate.error_messages()[:10])
-        update["step_records"] = [_record(step, ctx, status, started, messages)]
+        update["step_records"] = [_record(step, ctx, status, started, messages, usage)]
         return update
 
     node.__name__ = f"node_{step.id}"
@@ -169,11 +189,13 @@ def make_llm_node(
     def node(state: AgentState) -> dict[str, Any]:
         started = perf_counter()
         ctx = _context(state, step, manifest, settings)
+        usage: dict[str, Any] = {}
         try:
-            result = run_llm_step(ctx)
+            with _metered() as usage:
+                result = run_llm_step(ctx)
         except Exception as exc:
             failure = f"{type(exc).__name__}: {exc}"
-            record = _record(step, ctx, "failed", started, [failure])
+            record = _record(step, ctx, "failed", started, [failure], usage)
             if step.fan_out:
                 # One boundary failing must not discard every other boundary's analysis. The
                 # gap analysis reports the missing cluster.
@@ -206,7 +228,9 @@ def make_llm_node(
             }
 
         update = _apply(result, ctx, step)
-        update["step_records"] = [_record(step, ctx, "passed", started, result.messages)]
+        update["step_records"] = [
+            _record(step, ctx, "passed", started, result.messages, usage)
+        ]
         if not step.fan_out:
             update["completed_steps"] = [step.id]
         if is_repair_target:
@@ -219,7 +243,15 @@ def make_llm_node(
     return node
 
 
-def make_halt_node() -> NodeFn:
+def _save_usage(state: AgentState, settings: Settings | None) -> None:
+    try:
+        summary = summarise_usage(list(state.get("step_records") or []), settings)
+        ArtifactStore(Path(state["run_dir"])).save("llm_usage", summary)
+    except Exception:  # pragma: no cover - reporting must never fail a run
+        pass
+
+
+def make_halt_node(settings: Settings | None = None) -> NodeFn:
     """Terminal node for a failed gate or a step that stopped the run.
 
     Writes an honest failure record rather than letting the run end quietly at whatever node
@@ -227,6 +259,7 @@ def make_halt_node() -> NodeFn:
     """
 
     def node(state: AgentState) -> dict[str, Any]:
+        _save_usage(state, settings)
         reason = state.get("halt_reason")
         if not reason:
             # Summarise from the issues themselves. This previously read `issues_summary`, a key
@@ -272,10 +305,11 @@ def make_halt_node() -> NodeFn:
     return node
 
 
-def make_finalise_node(manifest: PackManifest) -> NodeFn:
+def make_finalise_node(manifest: PackManifest, settings: Settings | None = None) -> NodeFn:
     """Sets the terminal status from what the run actually produced."""
 
     def node(state: AgentState) -> dict[str, Any]:
+        _save_usage(state, settings)
         if state.get("status") == "failed":
             return {}
         records = state.get("step_records") or []

@@ -180,7 +180,7 @@ steps:
     mode: deterministic
     capability: build_boundary_clusters
     consumes: [graph, boundary_modules]
-    produces: [clusters]
+    produces: [clusters, cluster_plan]
     on_fail: halt
 
   # Phase 3a — one model call per boundary cluster, in parallel.
@@ -206,6 +206,22 @@ steps:
 
       Work outward from the boundary. Its label is the product's own wording for what it offers
       someone; `triggered_outcomes` and the workflow reachable from it are what that offer does.
+
+      **A slice after the first is a continuation.** When `part` is greater than 1, one boundary's
+      workflow was too large for one packet and slice 1 has already described the boundary's own
+      capability. Do not write it again — two workers each describing the entry point is how one
+      capability was published twice. Describe only behaviour whose evidence is in this slice.
+
+      **A packed cluster holds several boundaries.** When `packed_boundaries` is present, several
+      small boundaries of one module share this packet. Treat each as its own entry point: write
+      its capabilities separately and cite each at its own span. Never fold two of them into one
+      requirement.
+
+      **One behaviour, one requirement.** When the same operation on the same code serves several
+      actors — a recruiter and a candidate both retrieving available slots — write one
+      requirement that names each actor, not one per actor. Two requirements citing the same span
+      and asserting the same operation are one requirement written twice, and a reviewer has to
+      notice and merge them.
 
       You are working the bottom two tiers of the classification model. The top tier — the
       business requirements this all serves — is written later, by the only step that sees every
@@ -345,7 +361,8 @@ steps:
       ever did.
 
       **Name the areas.** When the work item carries a `module_code`, that is your `area_code` —
-      copy it exactly and do not invent one. It is assigned from the module partition, which
+      copy it exactly and do not invent one. Everything you return is filed under it; a
+      requirement's own `area` is honoured only when it names another module's code. It is assigned from the module partition, which
       grouped this cluster with the other boundaries running the same code, and it is the only
       version of "clusters covering the same part of the product must use the same code" a worker
       can actually obey: you cannot see another worker's reply, so agreement has to be handed down
@@ -514,9 +531,55 @@ steps:
     skill: evidence-grounded-requirement-synthesis
     mode: deterministic
     capability: digest_areas
-    consumes: [fragments, capability_clusters]
+    consumes: [fragments, capability_clusters, module_analyses]
     produces: [area_digest]
     on_fail: halt
+
+  # Phase 3b(ii) — the top tier in several small calls rather than one impossible one. Measured on
+  # a 374-capability run: one call binding every capability by exact title bound eight and invented
+  # a ninth. Every capability gets an id here; nothing downstream names one by title again.
+  - id: index_capabilities
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: index_capabilities
+    consumes: [fragments, module_analyses]
+    produces: [capability_index, outcome_work_items]
+    on_fail: warn_and_continue
+
+  # E1 — one call per part of the product: which outcomes do these capabilities serve?
+  - id: propose_outcomes
+    skill: evidence-grounded-requirement-synthesis
+    section: "The classification model"
+    mode: llm
+    fan_out: outcome_work_items
+    output_schema: OutcomeProposals
+    produces: [outcome_fragments]     # a shared state channel, not a file: many workers write at once
+    instructions: |-
+      You are looking at one part of the product and every capability already written for it —
+      each with an id, a title and one line of what it does. Copy `area_code` exactly.
+
+      Propose the **one to three business outcomes** these capabilities serve: what someone gets
+      from this part of the product that they could not get before. An outcome survives
+      rebuilding the implementation, and it is never the part's name restated — "Candidate
+      Management" is where work lives; "recruiters can move a candidate from application to
+      decision without leaving the product" is an outcome.
+
+      Bind each capability to the one outcome it realises by listing its id in `capability_ids`.
+      Judge each capability by what it achieves. A capability that serves none of your outcomes
+      goes in `unplaced` — that is an honest answer, and forcing it into an outcome states
+      something false about the product. Copy ids exactly; an id you were not given is discarded.
+
+      Write each statement as "The system shall enable <actor> to <outcome>, so that <value>",
+      naming the actor the capabilities name. Do not cite files or lines; the capabilities carry
+      the evidence.
+
+  - id: collect_outcome_proposals
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: collect_outcome_proposals
+    consumes: [outcome_fragments, capability_index]
+    produces: [outcome_proposals]
+    on_fail: warn_and_continue
 
   # Phase 3c — the top tier. This replaced `reduce`, and the replacement is the point of the
   # rebuild. `reduce` was handed every finding and asked to return the finished document in one
@@ -528,9 +591,27 @@ steps:
     skill: evidence-grounded-requirement-synthesis
     mode: llm
     output_schema: TopTier
-    consumes: [area_digest, module_analyses, graph]
+    consumes: [area_digest, outcome_proposals, module_analyses, graph]
     produces: [top_tier]
     instructions: |-
+      **When `outcome_proposals` lists proposals, merge them — do not bind titles.** Each proposal
+      is a candidate outcome written from inside one part of the product, with the capabilities
+      that realise it already attached by id. Your business requirements are the product's
+      outcomes: merge proposals that describe the same outcome from different parts, drop none
+      that stand alone, and write each merged outcome at the product's level. For every business
+      requirement return one `bindings` entry naming, in `from_proposals`, the exact ids (P01,
+      P02, ...) of the proposals it merges, and leave `realised_by` empty — the capabilities come
+      with the proposals, deterministically. **Every id in `every_proposal_id` must appear under
+      exactly one business requirement** — check the list before you answer. A proposal left out
+      takes every capability it bound out of the document's hierarchy; on one run the merge placed
+      6 of 80 and 5 of 95 capabilities stayed attached. Aim for the handful of outcomes the product
+      exists for — usually four to ten — and fold each remaining proposal into the one it serves. Only when `outcome_proposals` is empty, bind capability titles from
+      the digest in `realised_by` as described below.
+
+      **Name who the product serves** in `personas`, each as "Name - what they do with it", from
+      roles the evidence declares (a role constraint, a boundary label, a module purpose). Leave
+      it empty rather than adding a generic "user".
+
       You are given a digest of every functional area found in this repository: the area code, a
       business name, what its boundaries are, and the **titles** of the requirements already
       written for it. The requirements themselves are already written out in full, already
@@ -601,6 +682,74 @@ steps:
       plainly, so nobody infers it. An open question is a genuine ambiguity a stakeholder must
       settle. Leave any of them empty rather than filling it.
 
+  # E3 — expand each outcome's proposal ids into capability titles. No model call, so a title that
+  # does not exist can no longer be bound.
+  - id: compose_outcomes
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: compose_outcomes
+    consumes: [top_tier, outcome_proposals, capability_index]
+    produces: [top_tier, orphan_batches]
+    on_fail: warn_and_continue
+
+  # E4 — the orphan sweep: every capability no proposal bound, classified against the product's
+  # outcomes in batches, or deliberately left unattached.
+  - id: bind_orphans
+    skill: evidence-grounded-requirement-synthesis
+    section: "The classification model"
+    mode: llm
+    fan_out: orphan_batches
+    output_schema: CapabilityAssignments
+    produces: [orphan_fragments]     # a shared state channel, not a file: many workers write at once
+    instructions: |-
+      You are given the product's business outcomes and a batch of work no outcome has claimed
+      yet: `proposals` (candidate outcomes proposed for one part of the product, each standing for
+      several capabilities) and single `capabilities`. For each one return an assignment — its id
+      in `capability_id` (a P id or a C id) and the `outcome_id` (O1, O2, ...) of the outcome that
+      would be incomplete without it, or `NONE` when no outcome needs it. A proposal's capabilities
+      follow your answer for it.
+
+      Judge by what the capability achieves for someone, not by its wording. `NONE` is a correct
+      and frequent answer — an unattached capability is reported as a gap, which is honest, and a
+      wrong parent is a false statement about the product. Copy every id exactly.
+
+  - id: collect_orphan_bindings
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: collect_orphan_bindings
+    consumes: [orphan_fragments, top_tier, capability_index, outcome_proposals]
+    produces: [top_tier, outcome_review_items]
+    on_fail: warn_and_continue
+
+  # E5 — one reviewer per outcome, reading the capabilities actually bound to it.
+  - id: review_outcomes
+    skill: evidence-grounded-requirement-synthesis
+    section: "The classification model"
+    mode: llm
+    fan_out: outcome_review_items
+    output_schema: OutcomeReview
+    produces: [review_fragments]     # a shared state channel, not a file: many workers write at once
+    instructions: |-
+      You are reviewing one business outcome and the capabilities bound to it. Copy
+      `outcome_id` exactly.
+
+      Write two to five `acceptance_criteria`: observable conditions that would show the outcome
+      has been achieved, each drawn from what the bound capabilities do — "a recruiter can see a
+      candidate's interview feedback from every round in one place", not "the feature works".
+      Never restate the outcome, and never introduce a behaviour no capability shows.
+
+      Set `renamed_area` when the outcome only names a part of the product (where work lives)
+      rather than what someone gets from it, and say why in `concern`. Leave both alone when the
+      outcome is sound.
+
+  - id: apply_outcome_reviews
+    skill: evidence-grounded-requirement-synthesis
+    mode: deterministic
+    capability: apply_outcome_reviews
+    consumes: [review_fragments, top_tier]
+    produces: [top_tier]
+    on_fail: warn_and_continue
+
   # Phase 3d — assembly. Deterministic, and the reason the requirement count now tracks the
   # codebase. Every grounded finding from every cluster is carried through unchanged and attached
   # to the business requirement its area was bound to. Nothing is summarised or dropped for space:
@@ -609,7 +758,7 @@ steps:
     skill: evidence-grounded-requirement-synthesis
     mode: deterministic
     capability: assemble_requirements
-    consumes: [fragments, top_tier, capability_clusters]
+    consumes: [fragments, top_tier, capability_clusters, module_analyses]
     produces: [brd]
     on_fail: halt
 
@@ -815,6 +964,6 @@ steps:
     capability: render_deliverables
     consumes:
       [brd, graph, inventory, graph_gate, requirement_gate, unresolved_candidates,
-       synthesis_findings]
+       synthesis_findings, cluster_plan]
     produces: [deliverables]
     on_fail: warn_and_continue

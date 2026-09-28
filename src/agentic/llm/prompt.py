@@ -143,6 +143,105 @@ def _render_boundary_batch_work_item(work_item: dict[str, Any]) -> dict[str, Any
     }
 
 
+@renders_work_item("clusters")
+def _render_cluster_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `synthesize` worker's slice: a boundary cluster, with where it sits in the product.
+
+    The generic cluster payload carried the boundary and its evidence and nothing else, so the
+    fields the synthesis instruction tells a worker to act on never reached it: `module_code`
+    ("copy it exactly") was absent, so every worker invented an area code and one run published 54
+    areas for 21 modules; `residual` was absent, so code no boundary reaches was described as if a
+    boundary did; and a worker reading slice 2 of 3 could not know slice 1 had already described
+    the entry point, so both wrote it up.
+    """
+    part = int(work_item.get("part") or 1)
+    of_parts = int(work_item.get("of_parts") or 1)
+    cluster: dict[str, Any] = {
+        "boundary": work_item.get("boundary"),
+        "boundary_kind": work_item.get("boundary_kind"),
+        "boundary_location": work_item.get("boundary_location"),
+        # Boundaries sharing one workflow are merged into a single packet. Naming them keeps the
+        # model from writing about the first one only and dropping the rest.
+        "also_exposed_by": work_item.get("also_exposed_by") or [],
+        "module_code": work_item.get("module_code") or "",
+        "residual": bool(work_item.get("residual")),
+        "part": part,
+        "of_parts": of_parts,
+        "evidence": work_item.get("packet"),
+    }
+    if work_item.get("directory"):
+        cluster["directory"] = work_item["directory"]
+    if work_item.get("packed_boundaries"):
+        cluster["packed_boundaries"] = work_item["packed_boundaries"]
+    notes: list[str] = []
+    if of_parts > 1 and part > 1:
+        notes.append(
+            f"This is slice {part} of {of_parts} of one boundary's workflow. Slice 1 describes "
+            "the boundary's own capability; do not write it again. Describe only behaviour whose "
+            "evidence is in this slice."
+        )
+    if work_item.get("packed_boundaries"):
+        notes.append(
+            "Several small boundaries of one module share this packet. Treat each one in "
+            "`packed_boundaries` as its own entry point: write its capabilities separately and "
+            "cite each at its own span. Never merge two boundaries into one requirement."
+        )
+    payload: dict[str, Any] = {"cluster": cluster}
+    if notes:
+        payload["note"] = " ".join(notes)
+    return payload
+
+
+@renders_work_item("outcome_work_items")
+def _render_outcome_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `propose_outcomes` worker's slice: one part of the product and its capabilities."""
+    return {
+        "area": {
+            "area_code": work_item.get("area_code"),
+            "area_name": work_item.get("area_name"),
+            "area_purpose": work_item.get("area_purpose"),
+            "part": work_item.get("part"),
+            "of_parts": work_item.get("of_parts"),
+        },
+        "capabilities": work_item.get("capabilities") or [],
+        "rule_titles": work_item.get("rule_titles") or [],
+        "note": (
+            "Every capability here is already written and grounded. Propose the one to three "
+            "outcomes this part of the product serves and bind each capability to one of them by "
+            "its id. An id you were not given is discarded."
+        ),
+    }
+
+
+@renders_work_item("orphan_batches")
+def _render_orphan_batch(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `bind_orphans` worker's slice: the product's outcomes and a batch of unbound capabilities."""
+    return {
+        "outcomes": work_item.get("outcomes") or [],
+        "proposals": work_item.get("proposals") or [],
+        "capabilities": work_item.get("capabilities") or [],
+        "batch": {
+            "batch_id": work_item.get("batch_id"),
+            "batch_count": work_item.get("batch_count"),
+        },
+    }
+
+
+@renders_work_item("outcome_review_items")
+def _render_outcome_review_item(work_item: dict[str, Any]) -> dict[str, Any]:
+    """One `review_outcomes` worker's slice: one outcome and the capabilities bound to it."""
+    return {
+        "outcome": {
+            "outcome_id": work_item.get("outcome_id"),
+            "title": work_item.get("title"),
+            "statement": work_item.get("statement"),
+            "areas": work_item.get("areas") or [],
+            "capability_count": work_item.get("capability_count"),
+        },
+        "capabilities": work_item.get("capabilities") or [],
+    }
+
+
 @renders_work_item("modules")
 def _render_module_work_item(work_item: dict[str, Any]) -> dict[str, Any]:
     """One `analyse_module` worker's slice: a part of the product, not one boundary.
@@ -257,6 +356,117 @@ def _render_clusters(ctx: CapabilityContext, name: str) -> Any:
     return [
         {"boundary": item["boundary"], "kind": item["boundary_kind"]} for item in clusters
     ]
+
+
+def _proposals(ctx: CapabilityContext) -> list[dict[str, Any]]:
+    if "outcome_proposals" not in (ctx.state.get("artifacts") or {}):
+        return []
+    loaded = ctx.load("outcome_proposals")
+    return list(loaded.get("proposals") or []) if isinstance(loaded, dict) else []
+
+
+@renders("outcome_proposals")
+def _render_outcome_proposals(ctx: CapabilityContext, name: str) -> Any:
+    """Every candidate outcome, with the headline of what it binds -- never the ids it binds."""
+    proposals = _proposals(ctx)
+    return {
+        "proposals": [
+            {
+                "id": entry["id"],
+                "area_code": entry.get("area_code"),
+                "title": entry.get("title"),
+                "statement": entry.get("statement"),
+                "capability_count": len(entry.get("capability_ids") or []),
+            }
+            for entry in proposals
+        ],
+        # The checklist the merge must clear. Without it the model placed 6 of 80 proposals.
+        "every_proposal_id": [entry["id"] for entry in proposals],
+        "note": (
+            "Candidate outcomes proposed from inside each part of the product. Merge them into the "
+            "product's outcomes and name, in `from_proposals`, the ids each outcome merges. Every "
+            "id in `every_proposal_id` must appear under exactly one business requirement. The "
+            "capabilities come with them; you do not need to name any."
+        ),
+    }
+
+
+@renders("area_digest")
+def _render_area_digest(ctx: CapabilityContext, name: str) -> Any:
+    """The full title digest, unless outcome proposals already carry the bindings.
+
+    When proposals exist, capabilities attach through them by id, so the fifty thousand characters
+    of titles would only invite binding by title again. The areas themselves still help the merge.
+    """
+    digest = ctx.load(name)
+    if not _proposals(ctx) or not isinstance(digest, dict):
+        return digest
+    return {
+        "areas": [
+            {
+                "area_code": area.get("area_code"),
+                "area_name": area.get("area_name"),
+                "what_this_area_does": (area.get("what_this_area_does") or [])[:2],
+                "capabilities": len(area.get("capability_titles") or []),
+            }
+            for area in digest.get("areas") or []
+        ],
+        "area_count": digest.get("area_count"),
+        "total_findings": digest.get("total_findings"),
+    }
+
+
+# How much of each module's own findings the top tier is shown. Enough to say what a part of the
+# product is and what holds across it; the findings themselves are carried by assembly.
+MODULE_DIGEST_FINDINGS = 5
+
+
+@renders("module_analyses")
+def _render_module_analyses(ctx: CapabilityContext, name: str) -> Any:
+    """One compact entry per module: its name, purpose and the headline of what holds across it.
+
+    This artifact had no renderer, so it reached the top tier through the generic fallback: cut at
+    `MAX_ARTIFACT_CHARS` and sent as a truncated JSON preview. Sorted by module code, the preview
+    held the first module and nothing else -- the step told to "prefer the module analyses" was
+    shown one of twenty-one.
+    """
+    loaded = ctx.load(name)
+    analyses = (loaded.get("analyses") or []) if isinstance(loaded, dict) else []
+    seen: set[str] = set()
+    modules: list[dict[str, Any]] = []
+    for analysis in analyses:
+        code = str(analysis.get("module_code") or "")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        entry: dict[str, Any] = {
+            "module_code": code,
+            "module_name": analysis.get("module_name") or "",
+            "module_purpose": analysis.get("module_purpose") or "",
+        }
+        for section in (
+            "module_capabilities",
+            "cross_cutting_rules",
+            "quality_properties",
+            "integration_points",
+            "data_invariants",
+        ):
+            titles = [
+                str(item.get("title") or "")
+                for item in analysis.get(section) or []
+                if isinstance(item, dict) and item.get("title")
+            ][:MODULE_DIGEST_FINDINGS]
+            if titles:
+                entry[section] = titles
+        modules.append(entry)
+    return {
+        "modules": modules,
+        "module_count": len(modules),
+        "note": (
+            "One entry per part of the product, named and described by a worker that saw the "
+            "whole part. Finding titles are headlines only; the findings are already written."
+        ),
+    }
 
 
 @renders("test_batches")

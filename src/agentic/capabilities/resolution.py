@@ -30,8 +30,11 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
+from agentic.capabilities.actions import action_class
 from agentic.capabilities.consolidate import (
+    FRAME_WORDS,
     MERGE_SIMILARITY,
+    TIER_ORDER,
     _action_of,
     _same_action,
     _similarity,
@@ -168,15 +171,22 @@ def _resolve_conflicts(brd: ProductBRD, view: EvidenceView) -> tuple[int, int]:
     something different about the same action on the same evidence; a different verb is a
     different capability, which is the rule the merge pass already applies.
     """
+    # Keyed on the evidence and the *operation*, not on the capability cluster and the literal
+    # verb. Two readings of one span written with synonyms -- "validate" and "check" -- escaped
+    # the old key and were both published; two readings filed in different capability clusters
+    # never met at all. A different operation is still a different capability and still keeps a
+    # group of its own.
     groups: dict[tuple, list[BRDItem]] = defaultdict(list)
-    for items in brd.every_section().values():
+    tier_of: dict[int, str] = {}
+    for section, items in brd.every_section().items():
         for item in items:
             if item.cluster_conflict and item.cluster_id and item.evidence:
                 spans = frozenset(
                     (location.file, location.line_start, location.line_end)
                     for location in item.evidence
                 )
-                groups[(item.cluster_id, spans, _action_of(item.statement))].append(item)
+                groups[(spans, action_class(_action_of(item.statement)))].append(item)
+                tier_of[id(item)] = item.tier(section)
 
     kept = deferred = 0
     for _key, members in groups.items():
@@ -214,6 +224,32 @@ def _resolve_conflicts(brd: ProductBRD, view: EvidenceView) -> tuple[int, int]:
             # Where the wording genuinely diverges, they are competing readings after all, and an
             # arbitrary winner would state something about the product the analysis never
             # established. Those are still held back.
+            if len({tier_of.get(id(member)) for member in members}) == len(members):
+                # Every reading sits at a different level: one behaviour filed once as a
+                # capability and once as the internal behaviour behind it, the same operation on
+                # the same lines. That is one claim written at two altitudes, not two workers
+                # contradicting each other, and withholding both removed the behaviour from the
+                # document entirely. The most abstract reading is kept, as consolidation's
+                # cross-level merge keeps it, and the rest are folded in.
+                order = {tier: index for index, tier in enumerate(TIER_ORDER)}
+                keeper = min(members, key=lambda item: order.get(tier_of.get(id(item)), 99))
+                keeper.disposition = "keep"
+                keeper.resolution_reason = (
+                    f"Kept as the most abstract of {len(members)} readings of the same evidence "
+                    "and operation, each filed at a different level."
+                )
+                for member in members:
+                    if member is keeper:
+                        continue
+                    member.disposition = "merge"
+                    member.resolution_reason = (
+                        f"Folded into {keeper.title!r}: the same operation on the same evidence, "
+                        "filed at a different level."
+                    )
+                    _absorb(keeper, member)
+                kept += 1
+                continue
+
             fullest = max(members, key=lambda item: len(item.statement or ""))
             alike = [
                 member
@@ -342,6 +378,10 @@ def resolve_candidates(ctx: CapabilityContext) -> CapabilityResult:
             continue
         for item in items:
             if item.parent:
+                # A capability the correspondence check rejected is about to leave the document,
+                # so it cannot be what holds an outcome up.
+                if getattr(item.validation, "verdict", "") == "rejected":
+                    continue
                 supporters[title_key(item.parent)] += 1
                 if section == "functional_requirements":
                     children[title_key(item.parent)].append(item)
@@ -766,6 +806,15 @@ def validate_synthesis(ctx: CapabilityContext) -> CapabilityResult:
         if not item.id:
             report("MISSING_IDENTIFIER", "Published without an identifier.", item.title)
 
+    # 7. Near-duplicates that survived every merge. Reported, never settled: each rule that could
+    # have merged them declined for a reason, and a person should see the pair rather than have a
+    # threshold pick. Counting them is what makes duplication a number that can be driven down
+    # across runs instead of something a reader notices in the document.
+    duplicates = _duplicate_report([item for section, item in published
+                                    if section != "business_requirements"])
+    for code, first, second, detail in duplicates:
+        report(code, detail, f"{first.id} / {second.id}")
+
     ordered = Counter(issue["code"] for issue in issues)
     messages = [
         f"Checked the finished set against {len(ordered) or 'no'} structural failure mode(s)."
@@ -780,16 +829,103 @@ def validate_synthesis(ctx: CapabilityContext) -> CapabilityResult:
             "consumer cannot walk."
         )
 
+    duplicate_counts = Counter(code for code, *_ in duplicates)
     return CapabilityResult(
         artifacts={"brd": brd, "synthesis_findings": {"issues": issues, "counts": dict(ordered)}},
         metrics={
             "synthesis_findings": len(issues),
+            "duplicate_pairs_identical_evidence": duplicate_counts.get("DUPLICATE_EVIDENCE", 0),
+            "duplicate_pairs_similar_title": duplicate_counts.get("NEAR_DUPLICATE_TITLE", 0),
+            "duplicate_pairs_similar_statement": duplicate_counts.get(
+                "NEAR_DUPLICATE_STATEMENT", 0
+            ),
             "relations_cleared": cleared,
             "cycles_broken": broken_cycles,
             **{f"finding_{code}": count for code, count in ordered.items()},
         },
         messages=messages,
     )
+
+
+# How much of their meaningful words two titles in one area must share before the pair is
+# reported. Word overlap rather than a character ratio: "Retrieve candidate details" and "Retrieve
+# candidate email drafts" share a long prefix and score 0.84 by characters, yet are two
+# capabilities; "Retrieve Available Candidate Slots" and "Retrieve available slots for candidates"
+# reorder the same four words and are one.
+NEAR_DUPLICATE_TITLE = 0.80
+# How alike two statements citing the same file must read before the pair is reported.
+NEAR_DUPLICATE_STATEMENT = 0.75
+# The least wording two claims on identical evidence must share to be reported: enough to exclude
+# two distinct rules stated on one line of one file.
+DUPLICATE_EVIDENCE_WORDING = 0.25
+
+
+def _title_words(title: str) -> frozenset[str]:
+    words = set()
+    for word in " ".join((title or "").split()).casefold().split():
+        word = word.strip(".,;:'\"()")
+        word = word.removesuffix("'s").removesuffix("\u2019s")
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        if word and word not in FRAME_WORDS:
+            words.add(word)
+    return frozenset(words)
+
+
+def _duplicate_report(items: list[BRDItem]) -> list[tuple[str, BRDItem, BRDItem, str]]:
+    """Pairs of published requirements that look like one requirement written twice.
+
+    Three signals, each the shape one real duplicate took on a stored run:
+
+    - DUPLICATE_EVIDENCE: exactly the same citations and the same operation.
+    - NEAR_DUPLICATE_TITLE: titles nearly identical within one area.
+    - NEAR_DUPLICATE_STATEMENT: statements alike and citing the same file.
+
+    A pair is reported under the first signal it meets, once.
+    """
+    def spans(item: BRDItem) -> frozenset:
+        return frozenset((loc.file, loc.line_start, loc.line_end) for loc in item.evidence)
+
+    found: list[tuple[str, BRDItem, BRDItem, str]] = []
+    for index, first in enumerate(items):
+        first_spans = spans(first)
+        first_files = {loc.file for loc in first.evidence}
+        for second in items[index + 1:]:
+            if (
+                first_spans
+                and first_spans == spans(second)
+                and _same_action(first, second)
+                and _similarity(first.statement, second.statement) >= DUPLICATE_EVIDENCE_WORDING
+            ):
+                found.append((
+                    "DUPLICATE_EVIDENCE", first, second,
+                    f"{first.title!r} and {second.title!r} cite exactly the same code and assert "
+                    "the same operation.",
+                ))
+                continue
+            first_words, second_words = _title_words(first.title), _title_words(second.title)
+            if (
+                (first.area or "") == (second.area or "")
+                and first_words
+                and second_words
+                and len(first_words & second_words) / len(first_words | second_words)
+                >= NEAR_DUPLICATE_TITLE
+            ):
+                found.append((
+                    "NEAR_DUPLICATE_TITLE", first, second,
+                    f"{first.title!r} and {second.title!r} are nearly the same title in one area.",
+                ))
+                continue
+            if (
+                first_files & {loc.file for loc in second.evidence}
+                and _same_action(first, second)
+                and _similarity(first.statement, second.statement) >= NEAR_DUPLICATE_STATEMENT
+            ):
+                found.append((
+                    "NEAR_DUPLICATE_STATEMENT", first, second,
+                    f"{first.title!r} and {second.title!r} read alike and cite the same file.",
+                ))
+    return found
 
 
 # What evidence class each requirement family rests on, and therefore what a reader should

@@ -709,6 +709,14 @@ class OutcomeBinding(BaseModel):
     business_requirement: str = Field(
         description="The exact title of one business requirement from your own list."
     )
+    from_proposals: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The ids (P01, P02, ...) of the candidate outcomes from `outcome_proposals` that this "
+            "business requirement merges. Every capability those proposals bound comes with them, "
+            "by id, so nothing has to be named by title. Use this whenever proposals are given."
+        ),
+    )
     realised_by: list[str] = Field(
         default_factory=list,
         description=(
@@ -759,6 +767,14 @@ class TopTier(BaseModel):
             "product of a few areas that is two or three, for a broad platform it may be eight "
             "or ten. Each must stand over at least one whole area and be an outcome someone "
             "commissioned the product for, never an area renamed."
+        ),
+    )
+    personas: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The kinds of people the product serves, each as 'Name - what they do with it', read "
+            "from declared roles, boundary labels and module purposes. Only roles the evidence "
+            "names; never a generic 'user' added to fill the list."
         ),
     )
     bindings: list[OutcomeBinding] = Field(
@@ -887,6 +903,10 @@ class ProductBRD(BaseModel):
     non_functional_requirements: list[BRDItem] = Field(default_factory=list)
     reporting_requirements: list[BRDItem] = Field(default_factory=list)
 
+    personas: list[str] = Field(
+        default_factory=list,
+        description="Who the product serves, as the top tier established it; leave it alone.",
+    )
     areas: list[AreaLabel] = Field(
         default_factory=list,
         description=(
@@ -1156,4 +1176,88 @@ class ModuleAnalysis(BaseModel):
             "declared', 'no schema in this module'. An honest gap is reported and read by the "
             "completeness report; a guessed entry is rejected."
         ),
+    )
+
+
+class ProposedOutcome(BaseModel):
+    """One candidate business outcome, proposed from inside one part of the product."""
+
+    title: str = Field(description="A short name for the outcome, in business words.")
+    statement: str = Field(
+        description=(
+            "What someone gets, in one sentence: 'The system shall enable <actor> to <outcome>, "
+            "so that <value>.' Never a capability restated and never the area's name."
+        )
+    )
+    capability_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The ids (C001, C002, ...) of the capabilities in this work item that realise this "
+            "outcome. Copy them exactly; an id that was not given to you is discarded."
+        ),
+    )
+
+
+class OutcomeProposals(BaseModel):
+    """What one outcome-proposal worker returns for one part of the product.
+
+    The top tier used to be one call handed every capability title in the repository and asked to
+    bind each by name. On a real run it bound eight of 374 and invented a ninth. Proposing
+    outcomes per part of the product, with ids and one-line statements rather than bare titles,
+    turns one impossible judgement into many small ones.
+    """
+
+    area_code: str = Field(description="Copy the `area_code` you were given, exactly.")
+    proposals: list[ProposedOutcome] = Field(
+        default_factory=list,
+        description=(
+            "One to three outcomes this part of the product serves. Each capability id belongs to "
+            "at most one of them."
+        ),
+    )
+    unplaced: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Capability ids that serve no outcome you could name from this evidence. Leaving one "
+            "here is honest; forcing it into an outcome is not."
+        ),
+    )
+
+
+class CapabilityAssignment(BaseModel):
+    capability_id: str = Field(
+        description="A capability id (C001...) or a proposal id (P01...) exactly as given."
+    )
+    outcome_id: str = Field(
+        description="The id (O1, O2, ...) of the outcome it realises, or NONE if it serves none."
+    )
+
+
+class CapabilityAssignments(BaseModel):
+    """What one orphan-sweep worker returns: an outcome, or none, for each capability shown."""
+
+    assignments: list[CapabilityAssignment] = Field(default_factory=list)
+
+
+class OutcomeReview(BaseModel):
+    """What one outcome reviewer returns for one business requirement."""
+
+    outcome_id: str = Field(description="Copy the `outcome_id` you were given, exactly.")
+    acceptance_criteria: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Two to five observable conditions that would show this outcome has been achieved, "
+            "each drawn from the capabilities bound to it. Never a restatement of the outcome."
+        ),
+    )
+    renamed_area: bool = Field(
+        default=False,
+        description=(
+            "True when the outcome only names a part of the product (where work lives) rather "
+            "than what someone gets from it."
+        ),
+    )
+    concern: str = Field(
+        default="",
+        description="One sentence on what is wrong with the outcome, when anything is.",
     )

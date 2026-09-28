@@ -136,6 +136,7 @@ def load_builtin_capabilities() -> None:
         consolidate,
         correspondence,
         declarations,
+        elevation,
         entry_points,
         gates,
         graph_ops,

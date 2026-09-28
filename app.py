@@ -287,6 +287,57 @@ def _records_table(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------------------------
 
 
+def _cost_panel(state: dict[str, Any]) -> None:
+    """What this run spent on models, read from the `llm_usage.json` the run wrote on finishing."""
+    run_dir = state.get("run_dir")
+    path = Path(run_dir) / "artifacts" / "llm_usage.json" if run_dir else None
+    if path is None or not path.exists():
+        st.caption("Model usage was not recorded for this run.")
+        return
+    usage = ArtifactStore(Path(run_dir)).load_json(str(path))
+    total = usage.get("total") or {}
+    st.subheader("Model usage and cost")
+    columns = st.columns(4)
+    columns[0].metric("Estimated cost", f"${float(total.get('estimated_usd', 0)):.4f}")
+    columns[1].metric("Model calls", f"{int(total.get('calls', 0)):,}")
+    columns[2].metric("Input tokens", f"{int(total.get('input_tokens', 0)):,}")
+    columns[3].metric(
+        "Cached input",
+        f"{int(total.get('cached_input_tokens', 0)):,}",
+        help="Input tokens the provider served from its prompt cache, billed at a lower rate.",
+    )
+    st.dataframe(
+        [
+            {
+                "Step": name,
+                "Calls": row.get("calls", 0),
+                "Failed": row.get("failed_calls", 0),
+                "Input tokens": row.get("input_tokens", 0),
+                "Cached input": row.get("cached_input_tokens", 0),
+                "Output tokens": row.get("output_tokens", 0),
+                "Est. USD": round(float(row.get("estimated_usd", 0)), 4),
+            }
+            for name, row in (usage.get("steps") or {}).items()
+        ],
+        width="stretch",
+        hide_index=True,
+    )
+    models = usage.get("models") or {}
+    if models:
+        st.caption(
+            "Priced per model: "
+            + "; ".join(
+                # No "$" here: Streamlit reads a pair of them in markdown as LaTeX.
+                f"{name} ({row.get('rate_source', '')}: "
+                f"input {row['rates_usd_per_million']['input']} USD/M, "
+                f"output {row['rates_usd_per_million']['output']} USD/M)"
+                for name, row in models.items()
+                if row.get("rates_usd_per_million")
+            )
+            + ". " + str(usage.get("note", ""))
+        )
+
+
 def tab_run(state: dict[str, Any], manifest) -> None:
     status = state.get("status", "running")
     columns = st.columns(4)
@@ -306,6 +357,8 @@ def tab_run(state: dict[str, Any], manifest) -> None:
             "The workflow stops rather than producing a weaker document. A gate failure means "
             "the evidence could not support a trustworthy result."
         )
+
+    _cost_panel(state)
 
     st.subheader("Steps")
     st.dataframe(

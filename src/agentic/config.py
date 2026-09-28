@@ -89,6 +89,21 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 180
     llm_max_output_tokens: int = 8_000
 
+    # A different deployment for named model steps, as JSON in the environment:
+    # STEP_DEPLOYMENTS='{"elevate": "gpt-4o"}'. The product-level merge is one call, so giving it a
+    # stronger model costs cents while every fan-out step stays on the cheap default.
+    step_deployments: dict[str, str] = Field(default_factory=dict)
+
+    # USD per million tokens by model-name prefix, merged over the built-in list prices in
+    # `agentic.llm.usage.DEFAULT_RATES`. Set your deployment's real rates as JSON in the environment:
+    # LLM_RATES='{"gpt-4o-mini": {"input": 0.165, "cached_input": 0.083, "output": 0.66}}'.
+    llm_rates: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+    # Fallback rates for a model no LLM_RATES prefix matches. Defaults are gpt-4o-mini list prices.
+    llm_input_usd_per_million: float = 0.15
+    llm_cached_input_usd_per_million: float = 0.075
+    llm_output_usd_per_million: float = 0.60
+
     # Cost defence. The model never reads source files; it reads evidence packets built from the
     # knowledge graph. Compact JSON tokenises at roughly 2-4 characters per token, so a 40k
     # character packet leaves ample room for instructions and output in a 128k deployment.
@@ -100,6 +115,25 @@ class Settings(BaseSettings):
     # Cost is one bounded call per cluster, so this trades money for coverage linearly and the
     # omission is always reported.
     max_clusters: int = 80
+
+    # The cap above is now a floor. When more boundary groups exist than it allows, it grows to
+    # cover all of them, up to this ceiling -- a fixed 80 left 223 of 303 boundaries with no packet
+    # on one run. 0 restores the fixed cap.
+    max_clusters_ceiling: int = 250
+
+    # How many small boundaries of one module may share an evidence packet. Packets ran at a median
+    # of 16% of their budget, so packing covers more boundaries per call instead of adding calls.
+    # Kept small so a cheap model still gives each boundary its attention. 1 disables packing.
+    boundaries_per_packet: int = 4
+
+    # The top tier in several small calls: outcomes proposed per part of the product (one call
+    # each), merged in one call, an orphan sweep over whatever nothing proposed, and one review per
+    # outcome. Off restores the single `elevate` call binding every capability by title.
+    multi_call_elevation: bool = True
+    outcome_capabilities_per_item: int = 60
+    """Capabilities one proposal worker sees; a larger part of the product is cut into parts."""
+    orphan_batch_size: int = 40
+    """Unbound capabilities classified per orphan-sweep call."""
 
     max_repairs: int = 2
 

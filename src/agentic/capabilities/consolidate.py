@@ -47,6 +47,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from agentic.capabilities.actions import is_adverb, same_operation
 from agentic.capabilities.graph_ops import DECLARATION_KINDS
 from agentic.capabilities.registry import CapabilityContext, CapabilityResult, capability
 from agentic.schemas.core import KnowledgeGraph
@@ -140,7 +141,9 @@ def _action_of(statement: str) -> str:
     rest = _ENABLERS.sub("", body[match.end():].strip())
     for word in rest.split():
         cleaned = word.strip(".,;:'\"()").casefold()
-        if cleaned and cleaned not in FRAME_WORDS:
+        # "shall *consistently* use", "shall *exclusively* allow": the adverb is not the action,
+        # and reading it as one made two statements about one behaviour look like two verbs.
+        if cleaned and cleaned not in FRAME_WORDS and not is_adverb(cleaned):
             return cleaned
     return ""
 
@@ -157,7 +160,9 @@ def _same_action(left: BRDItem, right: BRDItem) -> bool:
     first, second = _action_of(left.statement), _action_of(right.statement)
     if not first or not second:
         return True  # nothing to compare; fall back to the wording score alone
-    return first == second
+    # Compared as operations, not as words: `validate` and `check`, `retrieve` and `get` are one
+    # operation, while `view` and `delete` stay two. A verb no class names is compared as itself.
+    return same_operation(first, second)
 
 
 def _spans(item: BRDItem) -> set[tuple]:
@@ -426,6 +431,105 @@ def _merge_across_tiers(brd: ProductBRD) -> int:
     if merged:
         survivors = {id(item) for index, (_, item) in enumerate(entries) if index not in absorbed}
         for _, items in sections.items():
+            items[:] = [item for item in items if id(item) in survivors]
+    return merged
+
+
+# How alike two statements citing *exactly the same code* must read before they are one claim.
+# Far below the general merge bar, because identical evidence is itself strong corroboration: two
+# workers handed the same lines, asserting the same operation on them, have described one
+# behaviour. Measured on the pairs that motivated it: "Retrieve Available Candidate Slots" and
+# "Retrieve available slots for candidates" scored 0.64 against a 0.65 bar and both survived.
+IDENTICAL_EVIDENCE_SIMILARITY = 0.40
+# A single-line citation is a decorator, a registration or a dispatch-table entry often enough
+# that several capabilities pass through it, so it corroborates less and the bar is higher.
+IDENTICAL_LINE_SIMILARITY = 0.50
+
+# Where the identical-evidence rule does not reach. An outcome rests on its capabilities' lines by
+# design; an observation is the evidence *for* a requirement; a success criterion validates one.
+_IDENTICAL_EVIDENCE_EXEMPT = frozenset({"business_requirements", "observations", "success_criteria"})
+
+
+def _identical_evidence_twins(
+    left: BRDItem, left_tier: str, right: BRDItem, right_tier: str
+) -> bool:
+    """Whether two claims resting on exactly the same code are one claim.
+
+    Every rule before this one needs the *wording* to carry the judgement, and wording is exactly
+    what varies when two workers describe one behaviour -- one from a recruiter's side, one from a
+    candidate's; one as a capability, one as the internal behaviour behind it. Identical evidence
+    plus the same operation is the stronger signal, and the wording only has to confirm it.
+
+    Four guards keep it from merging what should stay apart: the evidence must be identical, not
+    overlapping; the operations must match (`view` and `delete` on one handler stay two); a declared
+    parent link means a hierarchy, never a repetition; and two same-level readings the clustering
+    stage marked as conflicting are left for resolution to settle by support, not merged here.
+    """
+    spans = _spans(left)
+    if not spans or spans != _spans(right):
+        return False
+    if _names_as_parent(left, right) or not _same_action(left, right):
+        return False
+    if left_tier != right_tier:
+        # Two levels disagreeing is itself evidence: one worker read the code as something an
+        # outside actor does, the other as internal behaviour, and only validation can say which
+        # is right. Merged here that decision is made blind -- a true system requirement ("save
+        # an order so its details are retained") was folded into a mis-levelled capability over
+        # the same lines. So across levels identical evidence is only enough where the
+        # repository-wide clustering had independently grouped the two as one capability, as it
+        # did "Validate Resume Format" and "Resume Format Validation Rule".
+        return bool(left.cluster_id) and left.cluster_id == right.cluster_id and not (
+            left.cluster_conflict or right.cluster_conflict
+        )
+    if left.cluster_conflict or right.cluster_conflict:
+        return False
+    score = _similarity(left.statement, right.statement)
+    if any(end is None or end == start for _, start, end in spans):
+        return score >= IDENTICAL_LINE_SIMILARITY
+    return score >= IDENTICAL_EVIDENCE_SIMILARITY
+
+
+def _merge_identical_evidence(brd: ProductBRD) -> int:
+    """Merge claims that rest on exactly the same code and assert the same operation.
+
+    Runs after the wording-based merges, as a sweep for what their thresholds let through. The
+    more abstract claim survives, as in the cross-tier pass, and names the one it absorbed.
+    """
+    sections = brd.every_section()
+    rank = {tier: index for index, tier in enumerate(TIER_ORDER)}
+    entries: list[tuple[str, BRDItem]] = [
+        (section, item)
+        for section, items in sections.items()
+        if section not in _IDENTICAL_EVIDENCE_EXEMPT
+        for item in items
+    ]
+    absorbed: set[int] = set()
+    merged = 0
+    for position, (section, item) in enumerate(entries):
+        if position in absorbed:
+            continue
+        for other_position in range(position + 1, len(entries)):
+            if other_position in absorbed:
+                continue
+            other_section, other = entries[other_position]
+            if not _identical_evidence_twins(
+                item, item.tier(section), other, other.tier(other_section)
+            ):
+                continue
+            keeper, loser = item, other
+            if rank.get(other.tier(other_section), 99) < rank.get(item.tier(section), 99):
+                keeper, loser = other, item
+            _merge_into(keeper, loser)
+            absorbed.add(other_position if keeper is item else position)
+            merged += 1
+            if keeper is other:
+                break
+
+    if merged:
+        survivors = {id(item) for index, (_, item) in enumerate(entries) if index not in absorbed}
+        for section, items in sections.items():
+            if section in _IDENTICAL_EVIDENCE_EXEMPT:
+                continue
             items[:] = [item for item in items if id(item) in survivors]
     return merged
 
@@ -849,8 +953,11 @@ def consolidate_requirements(ctx: CapabilityContext) -> CapabilityResult:
     # Cross-tier last among the merges, so the cheap same-tier pass has already collapsed what it
     # can and the stricter comparison runs over fewer, fuller claims.
     cross_tier = 0
+    identical = 0
     if getattr(ctx.settings, "dedup_pass", True):
         cross_tier = _merge_across_tiers(brd)
+        # Last, as a sweep: what the wording thresholds let through, judged on identical evidence.
+        identical = _merge_identical_evidence(brd)
     # After the merge, because near-duplicates are the merge's job and a family is what remains:
     # statements too different to merge yet identical in shape.
     families = absorbed = 0
@@ -891,6 +998,12 @@ def consolidate_requirements(ctx: CapabilityContext) -> CapabilityResult:
             "more abstract wording survives and names the one it absorbed, so a reader can see "
             "the two were folded together rather than one being lost."
         )
+    if identical:
+        messages.append(
+            f"Merged {identical} claim(s) that cited exactly the same code and asserted the same "
+            "operation as another, though worded too differently for the wording test to catch. "
+            "The more abstract claim survives and names the one it absorbed."
+        )
     if folded:
         messages.append(
             f"Folded {folded} success condition(s) into the acceptance criteria of the "
@@ -926,6 +1039,7 @@ def consolidate_requirements(ctx: CapabilityContext) -> CapabilityResult:
         "demoted_to_observation": demoted,
         "duplicates_merged": merged,
         "cross_tier_duplicates_merged": cross_tier,
+        "identical_evidence_merged": identical,
         "duplicate_titles_remaining": _duplicate_titles(brd),
         "parameterised_families": families,
         "findings_absorbed_into_families": absorbed,

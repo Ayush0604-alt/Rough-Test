@@ -29,6 +29,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from agentic.capabilities.actions import same_operation
 from agentic.capabilities.registry import CapabilityContext, CapabilityResult, capability
 from agentic.schemas.brd import BRDItem, title_key
 
@@ -218,9 +219,12 @@ def relate(left: BRDItem, right: BRDItem, left_sig: Signature, right_sig: Signat
     # by the readings being *far apart* -- it lives below the threshold where the other relations
     # start looking. Two workers given the same span who describe different behaviour, or who
     # disagree about what kind of thing it is, have not found two requirements.
+    # Verbs are compared as operations: `validate` and `check` on the same lines are one
+    # behaviour filed at two levels, not two workers contradicting each other.
     if _same_evidence(left, right) and (
         score < CONFLICT_DIVERGENCE
-        or (left_sig.action and right_sig.action and left_sig.action != right_sig.action
+        or (left_sig.action and right_sig.action
+            and not same_operation(left_sig.action, right_sig.action)
             and not same_tier)
     ):
         return "conflicting"

@@ -41,8 +41,8 @@ def build_state_graph(manifest: PackManifest, settings: Settings | None = None) 
             make_node(step, manifest, settings, is_repair_target=step.id in repair_targets),
         )
 
-    builder.add_node(HALT_NODE, make_halt_node())
-    builder.add_node(FINALISE_NODE, make_finalise_node(manifest))
+    builder.add_node(HALT_NODE, make_halt_node(settings))
+    builder.add_node(FINALISE_NODE, make_finalise_node(manifest, settings))
     builder.set_entry_point(manifest.steps[0].id)
 
     for step in manifest.steps:
@@ -52,8 +52,19 @@ def build_state_graph(manifest: PackManifest, settings: Settings | None = None) 
         # A fan-out step is entered by parallel dispatch from its predecessor, not by a plain edge.
         if successor is not None and successor.fan_out:
             beyond = manifest.next_step_id(successor.id) or FINALISE_NODE
+            source = step.id
+            if step.fan_out:
+                # Two fan-out steps back to back. A conditional edge on a fan-out step is evaluated
+                # once per *worker*, so dispatching the second fan-out from here ran it once per
+                # worker of the first: 151 synthesis workers x 21 modules = 3,171 module-analysis
+                # calls where 21 were meant, about 95% of a run's model spend. A join node behind a
+                # plain edge runs once, after every worker of the first step has finished, and the
+                # second dispatch hangs off it instead.
+                source = join_node_id(step.id)
+                builder.add_node(source, _join_node)
+                builder.add_edge(step.id, source)
             builder.add_conditional_edges(
-                step.id,
+                source,
                 make_fanout_router(manifest, step, successor),
                 _targets([successor.id, beyond, HALT_NODE]),
             )
@@ -85,6 +96,16 @@ def build_state_graph(manifest: PackManifest, settings: Settings | None = None) 
     builder.add_edge(HALT_NODE, END)
     builder.add_edge(FINALISE_NODE, END)
     return builder
+
+
+def join_node_id(step_id: str) -> str:
+    """The barrier inserted after a fan-out step whose successor also fans out."""
+    return f"__join__{step_id}"
+
+
+def _join_node(state: AgentState) -> dict[str, Any]:
+    """A barrier and nothing else: every worker of the step before it has finished."""
+    return {}
 
 
 def _targets(names: list[str]) -> dict[str, str]:

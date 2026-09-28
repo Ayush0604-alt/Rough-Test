@@ -659,13 +659,45 @@ def _stratified(groups: list[dict[str, Any]], limit: int) -> list[dict[str, Any]
         if not spent:
             break
 
-    picked = {id(group) for name in order for group in by_class[name][: quota[name]]}
+    picked = {
+        id(group)
+        for name in order
+        for group in _spread_across_modules(by_class[name], quota[name])
+    }
     # Restore the original ranking among the survivors, so downstream ordering is unchanged.
     return [group for group in groups if id(group) in picked]
 
 
+def _spread_across_modules(members: list[dict[str, Any]], quota: int) -> list[dict[str, Any]]:
+    """Take `quota` members of one class, one module at a time, best-ranked first in each.
+
+    The class floor stops a cap deleting a whole *kind* of entry point; it did nothing to stop one
+    deleting a whole *part of the product*. Within a class the survivors were the top of a degree
+    ranking, and one densely connected module can hold the whole top of it. Round-robin across
+    modules keeps every part of the product in the sample. Members with no module share one
+    bucket, so a repository without a module partition is sampled exactly as before.
+    """
+    if quota >= len(members):
+        return list(members)
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for member in members:
+        buckets.setdefault(str(member.get("module") or ""), []).append(member)
+    if len(buckets) <= 1:
+        return members[:quota]
+    chosen: list[dict[str, Any]] = []
+    queues = [list(bucket) for bucket in buckets.values()]
+    while len(chosen) < quota and any(queues):
+        for queue in queues:
+            if queue and len(chosen) < quota:
+                chosen.append(queue.pop(0))
+    return chosen
+
+
 def declaration_groups(
-    index: GraphIndex, reached: set[str], limit_per_file: int
+    index: GraphIndex,
+    reached: set[str],
+    limit_per_file: int,
+    exclude_files: set[str] | frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Cluster seeds for declarations no boundary can reach.
 
@@ -684,7 +716,7 @@ def declaration_groups(
     for entity in index.entities.values():
         if entity.id in reached or entity.kind in NOISE_KINDS or entity.kind == "FILE":
             continue
-        if entity.location is None:
+        if entity.location is None or entity.location.file in exclude_files:
             continue
         unreached_by_file[entity.location.file].append(entity)
 
@@ -755,6 +787,60 @@ MIN_RESIDUAL_MEMBERS = 4
 DECLARATION_MEMBERS_PER_FILE = 400
 
 
+# Directories and filenames where a repository keeps instructions for the *coding agents its
+# developers use* -- not for any model the product itself calls. They are conventions of the
+# tooling (Claude Code, Cursor, Copilot, Windsurf, Codex, Gemini, Kiro, Roo, Cline, Junie, Amazon
+# Q), not of any product domain, so the list names tools and never a subject area.
+DEV_TOOLING_DIRECTORIES = frozenset(
+    {
+        ".agents", ".agent", ".claude", ".cursor", ".github", ".windsurf", ".codex", ".continue",
+        ".gemini", ".kiro", ".roo", ".clinerules", ".cline", ".junie", ".amazonq", ".aider",
+        ".vscode", ".idea", ".devcontainer",
+    }
+)
+DEV_TOOLING_FILENAMES = frozenset(
+    {
+        "claude.md", "agents.md", "agent.md", "gemini.md", ".cursorrules", ".windsurfrules",
+        ".clinerules", "copilot-instructions.md",
+    }
+)
+
+
+def is_dev_tooling_path(path: str) -> bool:
+    """Whether a file sits where developer-agent tooling keeps its instructions."""
+    parts = [part.casefold() for part in (path or "").replace("\\", "/").split("/") if part]
+    if not parts:
+        return False
+    return parts[-1] in DEV_TOOLING_FILENAMES or any(
+        part in DEV_TOOLING_DIRECTORIES for part in parts[:-1]
+    )
+
+
+def dev_tooling_instruction_files(index: "GraphIndex") -> set[str]:
+    """Instruction files written for the developers' coding agents rather than for the product.
+
+    On one run 68 of 153 published requirements -- 44% of the document -- cited nothing but
+    `.agents/skills/*/DESIGN.md` and `SKILL.md`: style guides telling a coding assistant how to lay
+    out a page. They became "the system shall enforce a single colour palette", three times over,
+    because the guide repeats its own rules in several sections. None of it is the product.
+
+    The rule is the one `LOADS` already encodes: an instruction file is product behaviour when
+    product code loads it. A file in a developer-tooling location that nothing loads is excluded
+    from synthesis and reported by name; one that the product does load stays, wherever it lives.
+    """
+    loaded: set[str] = set()
+    candidates: set[str] = set()
+    for entity in index.entities.values():
+        if entity.kind not in {"INSTRUCTION_ARTIFACT", "INSTRUCTION_RULE"}:
+            continue
+        if entity.location is None or not is_dev_tooling_path(entity.location.file):
+            continue
+        candidates.add(entity.location.file)
+        if any(edge.kind == "LOADS" for edge in index.incoming.get(entity.id, [])):
+            loaded.add(entity.location.file)
+    return candidates - loaded
+
+
 def _residual_groups(index: GraphIndex, reached: set[str]) -> list[dict[str, Any]]:
     """Cluster seeds for meaningful code no boundary walk and no declaration group reached.
 
@@ -810,6 +896,96 @@ def _residual_groups(index: GraphIndex, reached: set[str]) -> list[dict[str, Any
     return groups
 
 
+# How much of two boundaries' workflows must coincide before they are one packet. High on purpose:
+# twins share a handler or nearly all of its work, not merely a helper or a repository layer.
+TWIN_JACCARD = 0.8
+
+# How full a packet may be made by packing. Headroom below the budget, because a packed packet is
+# serialised from the union of its members and the estimate is taken per group.
+PACK_FILL = 0.85
+
+
+def _workflow_twin(
+    groups: list[dict[str, Any]], signature: frozenset[str]
+) -> dict[str, Any] | None:
+    """The existing group whose workflow is near-identical to this one, if any."""
+    if not signature:
+        return None  # nothing to compare: an empty workflow is not a twin of anything
+    size = len(signature)
+    for group in groups:
+        other = group.get("signature") or frozenset()
+        if not other:
+            continue
+        # Jaccard cannot reach the threshold when the sizes differ by more than it allows.
+        if min(size, len(other)) < TWIN_JACCARD * max(size, len(other)):
+            continue
+        if len(signature & other) / len(signature | other) >= TWIN_JACCARD:
+            return group
+    return None
+
+
+def _group_chars(index: GraphIndex, member_ids: list[str]) -> int:
+    """Characters a group's evidence would take in a packet, measured the way packets are built."""
+    return int(build_packet(index, member_ids, char_budget=10**9)["chars"])
+
+
+def _pack_small_groups(
+    index: GraphIndex,
+    groups: list[dict[str, Any]],
+    *,
+    char_budget: int,
+    per_packet: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Combine small boundary groups of one module into shared packets, in ranked order.
+
+    Only groups with a module are packed, only with others of the same module, never more than
+    `per_packet` of them, and never past `PACK_FILL` of the character budget. A group that is
+    already large travels alone, exactly as before. Returns the new group list and how many groups
+    were folded into another's packet.
+    """
+    if per_packet <= 1:
+        return groups, 0
+    limit = int(char_budget * PACK_FILL)
+    result: list[dict[str, Any]] = []
+    open_packs: dict[str, dict[str, Any]] = {}
+    folded = 0
+    for group in groups:
+        module = str(group.get("module") or "")
+        size = _group_chars(index, group["members"])
+        if not module or size >= limit:
+            result.append(group)
+            continue
+        pack = open_packs.get(module)
+        if (
+            pack is not None
+            and len(pack["packed_boundaries"]) < per_packet
+            and pack["chars"] + size <= limit
+        ):
+            pack["packed_boundaries"].append(group["boundaries"][0].qualified_name)
+            pack["boundaries"].extend(group["boundaries"])
+            for member in group["members"]:
+                if member not in pack["members"]:
+                    pack["members"].append(member)
+            pack["chars"] += size
+            folded += 1
+            continue
+        pack = {
+            **group,
+            "boundaries": list(group["boundaries"]),
+            "members": list(group["members"]),
+            "packed_boundaries": [group["boundaries"][0].qualified_name],
+            "chars": size,
+        }
+        open_packs[module] = pack
+        result.append(pack)
+    for group in result:
+        # A "pack" of one is an ordinary group; do not tell the worker it is sharing a packet.
+        if len(group.get("packed_boundaries") or []) < 2:
+            group.pop("packed_boundaries", None)
+        group.pop("chars", None)
+    return result, folded
+
+
 @capability("build_boundary_clusters")
 def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     """Partition the graph into one evidence packet per interaction boundary.
@@ -849,7 +1025,6 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     # apart in a single pass. Sending near-identical packets separately instead produces
     # near-identical claims that survive as duplicates, because each one is independently true.
     groups: list[dict[str, Any]] = []
-    by_signature: dict[frozenset[str], dict[str, Any]] = {}
     merged = 0
     for entity in primary:
         member_ids = index.workflow_from(entity.id)
@@ -860,15 +1035,21 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             if (found := index.entities.get(member)) is not None
             and found.kind not in BOUNDARY_KINDS
         )
-        group = by_signature.get(signature)
+        # Near-identical, not identical. Grouping used to require the two workflows to be *equal*
+        # sets, and every boundary's own handler is in its own set, so on a 303-boundary run it
+        # merged nothing at all. Twins now share most of their work: two routes on one handler, a
+        # control and the upload it consumes.
+        group = _workflow_twin(groups, signature)
         if group is None:
-            group = {
-                "boundaries": [entity],
-                "members": list(member_ids),
-                "class": entry_point_class(entity),
-            }
-            by_signature[signature] = group
-            groups.append(group)
+            groups.append(
+                {
+                    "boundaries": [entity],
+                    "members": list(member_ids),
+                    "class": entry_point_class(entity),
+                    "module": module_of.get(entity.id, ""),
+                    "signature": signature,
+                }
+            )
             continue
         group["boundaries"].append(entity)
         merged += 1
@@ -876,11 +1057,32 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             if member not in group["members"]:
                 group["members"].append(member)
 
+    # Several small boundaries of one module in one packet. Packets ran at a median of 16% of
+    # their budget, so most of every call's evidence allowance was paid for and unused while a
+    # fixed cap left three boundaries in four with no packet at all. Packing fills the budget
+    # instead of adding calls; it never crosses a module and never exceeds the budget.
+    boundary_groups_before_packing = len(groups)
+    groups, packed = _pack_small_groups(
+        index,
+        groups,
+        char_budget=settings.evidence_packet_chars,
+        per_packet=int(getattr(settings, "boundaries_per_packet", 1) or 1),
+    )
+    boundary_packets = len(groups)
+
+    # How many packets the boundaries may use. A fixed cap silently dropped 223 of 303 boundaries
+    # on one run; the cap now grows to cover every boundary group, up to a spend ceiling, and the
+    # configured `max_clusters` is the floor rather than the limit.
+    boundary_cap = settings.max_clusters
+    ceiling = int(getattr(settings, "max_clusters_ceiling", 0) or 0)
+    if ceiling > boundary_cap:
+        boundary_cap = min(ceiling, max(boundary_cap, len(groups)))
+
     # Sampling, not truncation. See `_stratified` for why the incoming order cannot be trusted.
     if getattr(settings, "stratified_cluster_selection", True):
-        planned = _stratified(groups, settings.max_clusters)
+        planned = _stratified(groups, boundary_cap)
     else:
-        planned = groups[: settings.max_clusters]
+        planned = groups[:boundary_cap]
 
     # Declarations are budgeted separately rather than made to compete for the same slots.
     #
@@ -895,11 +1097,15 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
     # A small separate budget keeps every guarantee the boundary sampler already makes, byte for
     # byte, and costs at most a quarter more clusters, only where declarations exist at all.
     declarations = 0
+    # Instructions for the developers' coding agents, which no product code loads. Excluded from
+    # synthesis and named in the plan, so the omission is on the record rather than silent.
+    developer_tooling = sorted(dev_tooling_instruction_files(index))
     if getattr(settings, "declaration_clusters", True):
         reached = {member for group in groups for member in group["members"]}
         extra = declaration_groups(
             index,
             reached,
+            exclude_files=set(developer_tooling),
             # Generous on purpose. This used to be `max_clusters`, which silently truncated a real
             # schema: 34 tables and 363 columns against a limit of 80 dropped most of the columns,
             # and a column is where a `NOT NULL` or a default actually lives. An oversized group is
@@ -972,7 +1178,16 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
                     "boundary": lead.qualified_name,
                     "boundary_kind": lead.kind,
                     "boundary_location": lead.location.compact() if lead.location else None,
-                    "also_exposed_by": [item.qualified_name for item in boundaries_here[1:]],
+                    "also_exposed_by": [
+                        item.qualified_name
+                        for item in boundaries_here[1:]
+                        if item.qualified_name not in group.get("packed_boundaries", ())
+                    ],
+                    **(
+                        {"packed_boundaries": list(group["packed_boundaries"])}
+                        if group.get("packed_boundaries")
+                        else {}
+                    ),
                     "member_count": len(member_ids),
                     "part": part,
                     "of_parts": len(packets),
@@ -996,11 +1211,41 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             )
 
     messages: list[str] = []
-    omitted = max(0, len(groups) - len(clusters))
+    planned_ids = {id(group) for group in planned}
+    omitted = sum(1 for group in groups if id(group) not in planned_ids)
+    boundaries_total = len(primary)
+    boundaries_planned = len(
+        {
+            entity.id
+            for group in planned
+            if not group.get("declaration") and not group.get("residual")
+            for entity in group["boundaries"]
+        }
+    )
     if omitted:
         messages.append(
-            f"{omitted} lower-connectivity interaction boundary/boundaries were omitted by the "
-            f"configured cluster cap of {settings.max_clusters}."
+            f"{omitted} lower-connectivity group(s) were omitted by the cluster cap of "
+            f"{boundary_cap} (floor {settings.max_clusters}, ceiling {ceiling or 'off'})."
+        )
+    if boundaries_total:
+        messages.append(
+            f"{boundaries_planned} of {boundaries_total} interaction boundaries "
+            f"({round(100.0 * boundaries_planned / boundaries_total, 1)}%) reached a synthesis "
+            "packet."
+        )
+    if packed:
+        messages.append(
+            f"{packed} small boundary group(s) were packed alongside others of the same module, "
+            f"turning {boundary_groups_before_packing} boundary groups into {boundary_packets} "
+            "packets without dropping any of them."
+        )
+    if developer_tooling:
+        messages.append(
+            f"{len(developer_tooling)} instruction file(s) written for developers' coding agents "
+            "and loaded by no product code were excluded from synthesis: "
+            + ", ".join(developer_tooling[:6])
+            + ("..." if len(developer_tooling) > 6 else "")
+            + "."
         )
     starved = sorted(
         name for name, total in present_by_class.items() if planned_by_class.get(name, 0) == 0
@@ -1059,10 +1304,27 @@ def build_boundary_clusters(ctx: CapabilityContext) -> CapabilityResult:
             "to be a library rather than an application."
         )
 
+    plan = {
+        "boundaries_total": boundaries_total,
+        "boundaries_planned": boundaries_planned,
+        "boundary_coverage_percent": round(
+            100.0 * boundaries_planned / max(1, boundaries_total), 1
+        ),
+        "boundary_cap": boundary_cap,
+        "groups_packed": packed,
+        "boundaries_merged_as_twins": merged,
+        "developer_tooling_files_excluded": developer_tooling,
+        "clusters": len(clusters),
+    }
     return CapabilityResult(
-        artifacts={"clusters": clusters},
+        artifacts={"clusters": clusters, "cluster_plan": plan},
         metrics={
             "clusters": len(clusters),
+            "boundaries_planned": boundaries_planned,
+            "boundary_coverage_percent": plan["boundary_coverage_percent"],
+            "boundary_cap": boundary_cap,
+            "groups_packed": packed,
+            "developer_tooling_files_excluded": len(developer_tooling),
             "declaration_files": declarations,
             "declaration_clusters": sum(1 for group in planned if group.get("declaration")),
             "groups_split": split_groups,

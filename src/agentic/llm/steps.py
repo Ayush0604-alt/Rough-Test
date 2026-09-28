@@ -37,6 +37,15 @@ def _is_length_failure(exc: Exception) -> bool:
     return "LengthFinishReason" in type(exc).__name__ or "length limit was reached" in str(exc)
 
 
+def _settings_for(ctx: CapabilityContext) -> Any:
+    """The run's settings, with this step's deployment swapped in when one is configured."""
+    settings = ctx.settings
+    override = (getattr(settings, "step_deployments", None) or {}).get(ctx.step.id)
+    if override and override != settings.azure_openai_deployment:
+        return settings.model_copy(update={"azure_openai_deployment": override})
+    return settings
+
+
 def run_llm_step(ctx: CapabilityContext) -> CapabilityResult:
     """Call the model for one step and return its schema-validated output.
 
@@ -48,7 +57,7 @@ def run_llm_step(ctx: CapabilityContext) -> CapabilityResult:
         raise ValueError(f"Step {ctx.step.id!r} is an llm step with no output_schema")
     schema = get_schema(schema_name)
 
-    model = build_chat_model(ctx.settings)
+    model = build_chat_model(_settings_for(ctx))
     structured = model.with_structured_output(schema)
     messages = build_messages(ctx)
 
@@ -93,6 +102,9 @@ def _to_result(ctx: CapabilityContext, value: BaseModel) -> CapabilityResult:
         fragment: dict[str, Any] = {
             "cluster_id": work_item.get("cluster_id"),
             "boundary": work_item.get("boundary"),
+            # The module the partition assigned this work item to. Carried on the fragment so
+            # assembly files findings under the module rather than under a code the worker made up.
+            **({"module_code": work_item["module_code"]} if work_item.get("module_code") else {}),
             **value.model_dump(mode="json"),
         }
         return CapabilityResult(fragment=fragment, metrics={"fragments_produced": 1})

@@ -27,7 +27,14 @@ def test_pack_loads_and_resolves_every_reference(manifest: PackManifest) -> None
         # The altitude between one boundary and the whole product.
         "partition_modules", "plan_clusters",
         "synthesize", "analyse_module", "collect_module_analyses",
-        "cluster_candidates", "digest_areas", "elevate", "assemble",
+        "cluster_candidates", "digest_areas",
+        # The top tier in several small calls: index, propose per part (E1), merge (E2), compose by
+        # id (E3), sweep the orphans (E4), review each outcome (E5).
+        "index_capabilities", "propose_outcomes", "collect_outcome_proposals",
+        "elevate",
+        "compose_outcomes", "bind_orphans", "collect_orphan_bindings",
+        "review_outcomes", "apply_outcome_reviews",
+        "assemble",
         # Consolidation and resolution: the stage between synthesis and validation that decides
         # what the candidates add up to.
         "consolidate", "check_correspondence", "score_confidence", "strip_implementation",

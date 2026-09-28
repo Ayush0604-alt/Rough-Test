@@ -156,6 +156,39 @@ class StubModel:
             return base.model_copy(deep=True)
         if name == "TopTier":
             return (self.top or _top()).model_copy(deep=True)
+        # The multi-call top tier. Scripted to change nothing the single TopTier call decides, so
+        # every assertion about outcomes still describes the scripted top tier: proposals bind by
+        # id (and the scripted outcome merges none of them), the orphan sweep declines, and the
+        # reviewer writes no criteria.
+        if name == "OutcomeProposals":
+            from agentic.schemas.brd import OutcomeProposals, ProposedOutcome
+
+            payload = json.loads(messages[-1][1])
+            return OutcomeProposals(
+                area_code=(payload.get("area") or {}).get("area_code") or "",
+                proposals=[
+                    ProposedOutcome(
+                        title="Stub proposal",
+                        statement="The system shall enable a person to do the stub outcome.",
+                        capability_ids=[c["id"] for c in payload.get("capabilities") or []],
+                    )
+                ],
+            )
+        if name == "CapabilityAssignments":
+            from agentic.schemas.brd import CapabilityAssignment, CapabilityAssignments
+
+            payload = json.loads(messages[-1][1])
+            return CapabilityAssignments(
+                assignments=[
+                    CapabilityAssignment(capability_id=c["id"], outcome_id="NONE")
+                    for c in payload.get("capabilities") or []
+                ]
+            )
+        if name == "OutcomeReview":
+            from agentic.schemas.brd import OutcomeReview
+
+            payload = json.loads(messages[-1][1])
+            return OutcomeReview(outcome_id=(payload.get("outcome") or {}).get("outcome_id", ""))
         if name == "RepairedItems":
             return self._repair(messages)
         if name == "EntailmentVerdicts":
@@ -347,7 +380,9 @@ def test_happy_path_produces_every_deliverable(e2e) -> None:
 
 
 def test_fan_out_runs_one_worker_per_interaction_boundary(e2e) -> None:
-    final, stub, prepared = e2e()
+    # Packing is what makes several small boundaries share one worker; switched off, the
+    # one-worker-per-boundary shape this test pins is exactly what remains.
+    final, stub, prepared = e2e(boundaries_per_packet=1)
     fragments = final["fragments"]
     assert len(fragments) >= 2
     # Boundaries are named after the handler they expose, not the route: Graphify does not

@@ -363,8 +363,16 @@ def test_the_final_check_names_every_failure_mode_it_finds() -> None:
 def test_a_clean_set_produces_no_findings() -> None:
     """A validator that always finds something is one nobody reads."""
     outcome = _item("Manage A Thing", requirement_type="business")
+    # Distinct operations on distinct code: children sharing one span and near-identical titles
+    # would now be reported as a near-duplicate pair, which is not what "clean" means.
+    verbs = ("browse", "rename", "archive", "export", "approve")
     children = [
-        _item(f"Capability {n}", parent="Manage A Thing", parent_relation="refines")
+        _item(
+            f"{verbs[n].title()} A Thing",
+            parent="Manage A Thing",
+            parent_relation="refines",
+            evidence=[_at(10 + 20 * n, 18 + 20 * n)],
+        )
         for n in range(MIN_SUPPORTING_CAPABILITIES)
     ]
     brd = ProductBRD(business_requirements=[outcome], functional_requirements=children)

@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from agentic.capabilities.graph_ops import BOUNDARY_KINDS, GraphIndex
 from agentic.capabilities.registry import CapabilityContext, CapabilityResult, capability
-from agentic.schemas.brd import BRDItem, CorrespondenceOutcome, ProductBRD
+from agentic.schemas.brd import BRDItem, CorrespondenceOutcome, ProductBRD, title_key
 from agentic.capabilities.verify import SYMBOL_WINDOW
 from agentic.schemas.core import KnowledgeGraph
 
@@ -469,6 +469,42 @@ def _entail(
 # --------------------------------------------------------------------------------------------
 
 
+# How many capabilities that passed the check an outcome needs beneath it to count as supported.
+# Two, the same floor resolution applies: one capability under an outcome is that capability
+# restated, not something the parts add up to.
+OUTCOME_MIN_SUPPORTED = 2
+
+
+def _judge_outcomes_by_capabilities(brd: ProductBRD) -> int:
+    """Mark each outcome supported when enough of its capabilities passed. Returns how many did.
+
+    An outcome with too few is left unchecked rather than rejected: resolution already turns an
+    outcome with fewer than two capabilities under it into a capability, which is the honest
+    answer, and a rejection would also strip the parent from every capability beneath it.
+    """
+    supported_children: Counter[str] = Counter()
+    for item in brd.functional_requirements:
+        if item.parent and getattr(item.validation, "verdict", "") == "supported":
+            supported_children[title_key(item.parent)] += 1
+    supported = 0
+    for outcome in brd.business_requirements:
+        count = supported_children[title_key(outcome.title)]
+        if count >= OUTCOME_MIN_SUPPORTED:
+            supported += 1
+            outcome.validation = CorrespondenceOutcome(
+                verdict="supported",
+                reason=f"{count} capabilities beneath it passed the correspondence check.",
+                checked_by="capabilities",
+            )
+        else:
+            outcome.validation = CorrespondenceOutcome(
+                verdict="unchecked",
+                reason=f"Only {count} capability/capabilities beneath it passed the check.",
+                checked_by="capabilities",
+            )
+    return supported
+
+
 @capability("validate_correspondence")
 def validate_correspondence(ctx: CapabilityContext) -> CapabilityResult:
     """Check every published claim against the code it cites, and record what was found."""
@@ -493,6 +529,13 @@ def validate_correspondence(ctx: CapabilityContext) -> CapabilityResult:
         # Observations record what the code does, so "does the code do this" is not a question
         # that can distinguish a good one from a bad one.
         if section == "observations":
+            continue
+        # An outcome has no code of its own: its citations are a sample borrowed from the
+        # capabilities beneath it. Reading "streamlined interview scheduling" against six sampled
+        # lines, the entailment check rejected four of six outcomes on one run, and every
+        # capability under them lost its parent -- 5 of 95 stayed attached. An outcome is judged
+        # by what stands under it, after those have been judged, below.
+        if section == "business_requirements":
             continue
         for item in items:
             checked += 1
@@ -555,6 +598,8 @@ def validate_correspondence(ctx: CapabilityContext) -> CapabilityResult:
     else:
         ctx_message = ""
 
+    outcomes_supported = _judge_outcomes_by_capabilities(brd)
+
     messages: list[str] = [
         f"Checked {checked} claim(s) against the code they cite. "
         f"{checked - rejected} are supported by it."
@@ -575,6 +620,12 @@ def validate_correspondence(ctx: CapabilityContext) -> CapabilityResult:
             "The entailment pass could not run, so claims were judged on the structural checks "
             f"alone: {ctx_message}"
         )
+    if brd.business_requirements:
+        messages.append(
+            f"{outcomes_supported} of {len(brd.business_requirements)} business outcome(s) are "
+            f"supported by at least {OUTCOME_MIN_SUPPORTED} capabilities that passed the check; "
+            "outcomes are judged by the capabilities beneath them, never against borrowed code."
+        )
 
     return CapabilityResult(
         artifacts={"brd": brd},
@@ -584,6 +635,7 @@ def validate_correspondence(ctx: CapabilityContext) -> CapabilityResult:
             "correspondence_rejected_deterministically": rejected - entailed,
             "correspondence_rejected_by_entailment": entailed,
             "correspondence_entailment_ran": entailment_ran,
+            "outcomes_supported_by_capabilities": outcomes_supported,
             **{f"correspondence_failed_{name}": count for name, count in failures.items()},
         },
         messages=messages,

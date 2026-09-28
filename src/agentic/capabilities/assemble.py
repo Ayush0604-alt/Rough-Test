@@ -190,20 +190,72 @@ def _as_fragment(payload: dict[str, Any]) -> BRDFragment | None:
         return None
 
 
+def _module_names(ctx: CapabilityContext) -> dict[str, str]:
+    """Module code -> the business name the module worker gave it, when module analysis ran."""
+    if "module_analyses" not in (ctx.state.get("artifacts") or {}):
+        return {}
+    try:
+        loaded = ctx.load("module_analyses")
+    except (KeyError, OSError, ValueError):
+        return {}
+    names = (loaded or {}).get("module_names") if isinstance(loaded, dict) else None
+    return {
+        _clean_code(str(code)): " ".join(str(name).split())
+        for code, name in (names or {}).items()
+        if _clean_code(str(code)) and str(name).strip()
+    }
+
+
+def _module_codes(payloads: list[dict[str, Any]]) -> set[str]:
+    """Every module code the partition handed to a synthesis worker."""
+    return {
+        code
+        for payload in payloads
+        if (code := _clean_code(str(payload.get("module_code") or "")))
+    }
+
+
+def item_area(
+    item: BRDItem,
+    payload: dict[str, Any],
+    default_code: str,
+    remap: dict[str, str],
+    modules: set[str],
+) -> str:
+    """The area one finding is filed under.
+
+    A worker handed a module code files everything under it, unless a finding names *another*
+    module. Workers used to invent a code per requirement, and since none of them saw the module
+    code they were meant to copy, one run published 54 areas for 21 modules.
+    """
+    declared = _clean_code(item.area)
+    declared = remap.get(declared, declared)
+    if payload.get("module_code") and declared not in modules:
+        return default_code
+    return declared or default_code
+
+
 def _area_index(
-    payloads: list[dict[str, Any]]
+    payloads: list[dict[str, Any]],
+    module_names: dict[str, str] | None = None,
 ) -> tuple[dict[int, str], dict[str, str], dict[str, str]]:
     """Assign every fragment an area code, and name each area once.
 
-    A worker that returned no usable code is grouped rather than dropped, and two workers that
-    chose the same code for the same part of the product are merged — which is the whole point of
-    asking them for a code rather than deriving one from a file path.
+    The partition's module code wins where a fragment carries one, and the module worker's
+    business name names it. Only fragments with no module -- declaration and residual clusters --
+    fall back to the code their worker chose, and two workers that chose the same code for the
+    same part of the product are merged.
     """
+    module_names = module_names or {}
     codes: dict[int, str] = {}
     names: dict[str, str] = {}
     for position, payload in enumerate(payloads):
-        code = _clean_code(str(payload.get("area_code") or "")) or FALLBACK_AREA
+        module = _clean_code(str(payload.get("module_code") or ""))
+        code = module or _clean_code(str(payload.get("area_code") or "")) or FALLBACK_AREA
         codes[position] = code
+        if module and module_names.get(module):
+            # Named by the worker that saw the whole module, not by one that saw one boundary.
+            names.setdefault(module, module_names[module])
         name = " ".join(str(payload.get("area_name") or "").split())
         if name and code not in names:
             names[code] = name
@@ -219,6 +271,7 @@ def _area_index(
     used = set(codes.values()) | {
         _clean_code(str(item.get("area") or ""))
         for payload in payloads
+        if not payload.get("module_code")
         for section in FRAGMENT_SECTIONS
         for item in (payload.get(section) or [])
         if isinstance(item, dict)
@@ -230,7 +283,13 @@ def _area_index(
     # Fold headings that mean the same thing onto one code before anything is published under
     # either. Done here rather than at rendering because the code is what an id is built from and
     # what a reader cites: two ids for one part of the product cannot be repaired downstream.
-    remap = _reconcile_areas(names)
+    # Module codes come from the partition and are never folded into one another: two modules are
+    # two parts of the product by construction, whatever their workers called them.
+    remap = {
+        code: target
+        for code, target in _reconcile_areas(names).items()
+        if code not in module_names
+    }
     if remap:
         codes = {position: remap.get(code, code) for position, code in codes.items()}
         folded: dict[str, str] = {}
@@ -249,7 +308,8 @@ def digest_areas(ctx: CapabilityContext) -> CapabilityResult:
     is for.
     """
     payloads = _fragments(ctx)
-    codes, names, remap = _area_index(payloads)
+    codes, names, remap = _area_index(payloads, _module_names(ctx))
+    modules = _module_codes(payloads)
 
     grouped: dict[str, dict[str, Any]] = {}
     for position, payload in enumerate(payloads):
@@ -278,8 +338,7 @@ def digest_areas(ctx: CapabilityContext) -> CapabilityResult:
         # writes the top tier sees one lump and binds it to a single outcome.
         for section in FRAGMENT_SECTIONS:
             for item in getattr(fragment, section):
-                declared = _clean_code(item.area)
-                code = remap.get(declared, declared) or default_code
+                code = item_area(item, payload, default_code, remap, modules)
                 area = area_for(code)
                 area["counts"][section] += 1
                 if boundary and boundary not in area["boundaries"]:
@@ -462,7 +521,8 @@ def assemble_requirements(ctx: CapabilityContext) -> CapabilityResult:
             for cluster in loaded.get("clusters", [])
             if cluster.get("relation") == "conflicting"
         }
-    codes, names, remap = _area_index(payloads)
+    codes, names, remap = _area_index(payloads, _module_names(ctx))
+    modules = _module_codes(payloads)
 
     brd = ProductBRD(
         product_purpose=top.product_purpose,
@@ -471,6 +531,7 @@ def assemble_requirements(ctx: CapabilityContext) -> CapabilityResult:
         assumptions=list(top.assumptions),
         out_of_scope=list(top.out_of_scope),
         open_questions=list(top.open_questions),
+        personas=list(top.personas),
         areas=[AreaLabel(code=code, name=name) for code, name in sorted(names.items())],
     )
     for requirement in brd.business_requirements:
@@ -518,6 +579,7 @@ def assemble_requirements(ctx: CapabilityContext) -> CapabilityResult:
                 carried = _carry(
                     item, default_area, section, cluster_id, cluster_id in conflicted, remap
                 )
+                carried.area = item_area(item, payload, default_area, remap, modules)
                 seen_areas.add(carried.area)
                 if section == "functional_requirements":
                     # Bound by what this capability is, not by where it was found. A capability

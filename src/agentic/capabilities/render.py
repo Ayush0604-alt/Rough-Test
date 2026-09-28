@@ -291,6 +291,8 @@ def render_requirements_md(brd: ProductBRD, repository_name: str) -> str:
             brd.business_problem.statement,
             "",
         ]
+    if brd.personas:
+        lines += ["**Who the product serves:**", "", *[f"- {persona}" for persona in brd.personas], ""]
 
     # -- Business objectives ------------------------------------------------------------------
     lines += [_numbered(counter, "Business objectives"), ""]
@@ -709,12 +711,40 @@ def _uncovered_files(brd: ProductBRD, graph: KnowledgeGraph) -> list[str]:
     return missing
 
 
+def _synthesis_coverage(plan: dict) -> list[str]:
+    """How many interaction boundaries reached a model at all, and what was left out on purpose."""
+    if not plan:
+        return []
+    lines = [
+        "## Interaction boundaries analysed",
+        "",
+        f"{plan.get('boundaries_planned', 0)} of {plan.get('boundaries_total', 0)} interaction "
+        f"boundaries ({plan.get('boundary_coverage_percent', 0)}%) reached a synthesis packet. A "
+        "boundary that did not is described by nothing in this document.",
+        "",
+    ]
+    excluded = plan.get("developer_tooling_files_excluded") or []
+    if excluded:
+        lines += [
+            "### Instruction files for developers' coding agents (not product requirements)",
+            "",
+            "These files instruct the coding assistants the developers use, and no product code "
+            "loads them, so they describe how the code is written rather than what the product "
+            "does. They were not turned into requirements.",
+            "",
+            _bullet([f"`{path}`" for path in excluded], "none"),
+            "",
+        ]
+    return lines
+
+
 def render_gap_analysis_md(
     brd: ProductBRD,
     graph: KnowledgeGraph,
     inventory: RepositoryInventory,
     gates: dict[str, GateReport],
     incomplete: list[str] | None = None,
+    plan: dict | None = None,
 ) -> str:
     by_qualified = graph.by_qualified_name()
     covered: set[str] = set()
@@ -780,6 +810,7 @@ def render_gap_analysis_md(
         "|---|---:|---:|---:|",
         *(rows or ["| _none extracted_ | 0 | 0 | — |"]),
         "",
+        *_synthesis_coverage(plan or {}),
         "## Parts of the codebase no requirement describes",
         "",
         "A source file holding real work that no published requirement traces into. This is the "
@@ -1136,7 +1167,9 @@ def render_deliverables(ctx: CapabilityContext) -> CapabilityResult:
             {entity.qualified_name for entity in graph.entities if entity.kind == "MODULE"},
         ),
         "traceability_matrix.csv": render_traceability_csv(brd),
-        "gap_analysis.md": render_gap_analysis_md(brd, graph, inventory, gates, incomplete),
+        "gap_analysis.md": render_gap_analysis_md(
+            brd, graph, inventory, gates, incomplete, _optional(ctx, "cluster_plan")
+        ),
         "technical_specification.md": render_technical_spec_md(graph, inventory),
         "api_documentation.md": render_api_docs_md(graph),
         "workflows.mmd": render_workflows_mmd(graph),

@@ -38,6 +38,14 @@ class StepRecord(TypedDict, total=False):
     status: str
     duration_ms: float
     messages: list[str]
+    # What this node spent on models, from the provider's own usage reports. Absent when it made
+    # no call. `usage_by_model` keeps each model apart so each is priced at its own rate.
+    model_calls: int
+    failed_calls: int
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+    usage_by_model: dict[str, dict[str, int]]
 
 
 class AgentState(TypedDict, total=False):
@@ -71,6 +79,14 @@ class AgentState(TypedDict, total=False):
     # `ModuleAnalysis` is not a `BRDFragment`, and every field on `BRDFragment` has a default, so
     # `model_validate` would accept one and silently publish an empty fragment rather than fail.
     module_fragments: Annotated[list[dict[str, Any]], operator.add]
+
+    # The multi-call top tier's three fan-out channels, one per reply shape, for the same reason
+    # each earlier fan-out has its own: `propose_outcomes` (one `OutcomeProposals` per part of the
+    # product), `bind_orphans` (one `CapabilityAssignments` per batch of unbound capabilities) and
+    # `review_outcomes` (one `OutcomeReview` per business requirement).
+    outcome_fragments: Annotated[list[dict[str, Any]], operator.add]
+    orphan_fragments: Annotated[list[dict[str, Any]], operator.add]
+    review_fragments: Annotated[list[dict[str, Any]], operator.add]
 
     # Set per-branch by the fan-out dispatcher. Read by a worker, never written back, so parallel
     # branches cannot conflict over it.
@@ -108,6 +124,9 @@ def initial_state(
         fragments=[],
         boundary_fragments=[],
         module_fragments=[],
+        outcome_fragments=[],
+        orphan_fragments=[],
+        review_fragments=[],
         gate_reports={},
         repair_attempts=0,
         status="running",
